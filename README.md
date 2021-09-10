@@ -15,6 +15,7 @@ cd build
 cmake ..
 ```
 
-Open the solution with Visual Studio and build it.
+Open the solution with Visual Studio and build Release.
+For Debug the wxWidgets libraries won't link. If you need to debug, you'll need to build debug libraries for wxWidgets.
 
 License: GNU GPL 3
