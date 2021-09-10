@@ -1,0 +1,121 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        ObjectStats.meta
+// Purpose:     Definition of TObjectStats class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef OBJECT_STATS_META
+#define OBJECT_STATS_META
+
+#include "Meta.h"
+#include "File.meta"
+
+CLASS(TObjectStats)
+
+// Private section:
+MEMBER_VAR(TSTRING,   __nameInFile)
+MEMBER_VAR(TSTRING,   __nameInScene)
+MEMBER_VAR(TINT,      __numMtls)
+MEMBER_VAR(TINT,      __numFaces)
+MEMBER_VAR(TINT,      __numVertsInFile)
+MEMBER_VAR(TINT,      __numVertsInScene)
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __nameInFile, EMPTY_STRING)
+	ASSIGN(SELF __nameInScene, EMPTY_STRING)
+	ASSIGN(SELF __numMtls, 0)
+	ASSIGN(SELF __numFaces, 0)
+	ASSIGN(SELF __numVertsInFile, 0)
+	ASSIGN(SELF __numVertsInScene, 0)
+END_MEMBER_PROC
+
+// Write to file
+MEMBER_PROC_1(Write, TFile, f)
+	CALLP1(f.WriteString, 		SELF __nameInFile)
+	CALLP1(f.WriteString, 		SELF __nameInScene)
+	CALLP1(f.WriteUnsignedLong, SELF __numMtls)
+	CALLP1(f.WriteUnsignedLong, SELF __numFaces)
+	CALLP1(f.WriteUnsignedLong, SELF __numVertsInFile)
+	CALLP1(f.WriteUnsignedLong, SELF __numVertsInScene)
+END_MEMBER_PROC
+
+// Read from file
+MEMBER_PROC_1(Read, TFile, f)
+	ASSIGN(SELF __nameInFile, 		CALLF0(f.ReadString))
+	ASSIGN(SELF __nameInScene, 		CALLF0(f.ReadString))
+	ASSIGN(SELF __numMtls, 			CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __numFaces, 		CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __numVertsInFile, 	CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __numVertsInScene, 	CALLF0(f.ReadUnsignedLong))
+END_MEMBER_PROC
+
+// Name of object in file
+MEMBER_PROC_1(SetNameInFile, TSTRING, nameInFile)
+	ASSIGN(SELF __nameInFile, nameInFile)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetNameInFile)
+	RETURN_VAL(SELF __nameInFile)
+END_MEMBER_FUNC
+
+// Name of object in scene (can be equal to name of object in file or not)
+MEMBER_PROC_1(SetNameInScene, TSTRING, nameInScene)
+	ASSIGN(SELF __nameInScene, nameInScene)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetNameInScene)
+	RETURN_VAL(SELF __nameInScene)
+END_MEMBER_FUNC
+
+// Number of materials
+MEMBER_PROC_1(SetNumMtls, TINT, numMtls)
+	ASSIGN(SELF __numMtls, numMtls)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetNumMtls)
+	RETURN_VAL(SELF __numMtls)
+END_MEMBER_FUNC
+
+// Number of faces
+MEMBER_PROC_1(SetNumFaces, TINT, numFaces)
+	ASSIGN(SELF __numFaces, numFaces)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetNumFaces)
+	RETURN_VAL(SELF __numFaces)
+END_MEMBER_FUNC
+
+// Number of vertices in file
+MEMBER_PROC_1(SetNumVertsInFile, TINT, numVertsInFile)
+	ASSIGN(SELF __numVertsInFile, numVertsInFile)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetNumVertsInFile)
+	RETURN_VAL(SELF __numVertsInFile)
+END_MEMBER_FUNC
+
+// Number of vertices in scene (can be equal to number of vertices in file or not)
+MEMBER_PROC_1(SetNumVertsInScene, TINT, numVertsInScene)
+	ASSIGN(SELF __numVertsInScene, numVertsInScene)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetNumVertsInScene)
+	RETURN_VAL(SELF __numVertsInScene)
+END_MEMBER_FUNC
+
+END_CLASS // TObjectStats
+
+
+// Global function to create object of class TObjectStats
+GLOBAL_FUNC_0(TObjectStats, NewObjectStats)
+	LOCAL_VAR(TObjectStats, objectStats, NEW_VAL(TObjectStats))
+	CALLP0(objectStats.Init)
+	RETURN_VAL(objectStats)
+END_GLOBAL_FUNC
+
+#endif // OBJECT_STATS_META

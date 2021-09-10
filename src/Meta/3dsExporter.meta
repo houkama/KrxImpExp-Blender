@@ -1,0 +1,114 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        3dsExporter.meta
+// Purpose:     Main source file for "3ds file exporter" program
+//              This file is intended to be compiled.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef _3DS_EXPORTER_META
+#define _3DS_EXPORTER_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "FormatMsg.meta"
+#include "ObjectStats.meta"
+#include "3dsFileSaver.meta"
+#include "SceneAnalyzer.meta"
+#include "3dsExporterDlgInput.meta"
+#include "3dsExporterDlgOutput.meta"
+#include "MeshInfoDlgInput.meta"
+#include "ImpExpPathes.meta"
+#include "RunUIExe.meta"
+
+// 3DS file exporter main function
+EXPORT_FUNC(Krx3dsExp, T("3DS"), T("Kerrax 3D Studio Mesh"), T("Kerrax"), 2008, 1.10, 0x11a60102, 0x3cc24bb7, 1024228)
+
+	// analyze the scene
+	LOCAL_VAR(TSceneAnalyzer, sceneAnalyzer, CALLF0(AnalyzeScene))
+
+	// dialog input data
+	LOCAL_VAR(T3DSExporterDlgInput, dlgInput, CALLF0(New3DSExporterDlgInput))
+	CALLP1(dlgInput.SetExportFileName, EXPORT_FILE_NAME)
+	CALLP1(dlgInput.SetSceneObjects, CALLF0(sceneAnalyzer.GetSceneMeshesByType))
+	LOCAL_VAR(TARRAY(TSTRING), selectedObjects, CALLF0(sceneAnalyzer.GetSelectedMeshesByType))
+	IF(SIZE(selectedObjects) == 0)
+		ASSIGN(selectedObjects, CALLF0(sceneAnalyzer.GetSceneMeshesByType))
+	END_IF
+	CALLP1(dlgInput.SetSelectedObjects, selectedObjects)
+	CALLP1(dlgInput.SetUseLocalCS, SIZE(selectedObjects) <= 1)
+	CALLP1(dlgInput.SetFileUnitsPerSystemUnit, DEFAULT_FILE_UNITS_PER_SYSTEM_UNIT)
+	
+	// show dialog and analyze the dialog's result
+	LOCAL_VAR(T3DSExporterDlgOutput, dlgOutput, CALLF1(New3DSExporterDlgOutput, dlgInput))
+	LOCAL_VAR(TFile, inputFile, CALLF0(NewFile))
+	LOCAL_VAR(TFile, outputFile, CALLF0(NewFile))
+	IF(NOT(QUIET))
+		TRY
+			SHOW_PROGRESS_BAR(T("Showing dialog"), 0)
+			CALLP2(inputFile.Open, DLG_INPUT_FILE_PATH, T("wb"))
+			CALLP1(inputFile.WriteString, T("3DSExporterDlgInput"))
+			CALLP1(dlgInput.Write, inputFile)
+			CALLP0(inputFile.Close)
+			CALLP0(RunUIExe)
+			CALLP2(outputFile.Open, DLG_OUTPUT_FILE_PATH, T("rb"))
+			LOCAL_VAR(TSTRING, structName, CALLF0(outputFile.ReadString))
+			CALLP1(dlgOutput.Read, outputFile)
+			CALLP0(outputFile.Close)
+		
+			IF(NOT(CALLF0(dlgOutput.GetContinueExport)))
+				HIDE_PROGRESS_BAR
+				RETURN_VAL(IMPEXP_CANCEL)
+			END_IF
+		END_TRY
+		CATCH
+			CALLP0(inputFile.Close)
+			CALLP0(outputFile.Close)
+			SHOW_ERROR_BOX(T("Kerrax 3DS Exporter"), CURRENT_EXCEPTION)
+			HIDE_PROGRESS_BAR
+			RETURN_VAL(IMPEXP_CANCEL)
+		END_CATCH
+	END_IF
+	
+	// Export itself
+	LOCAL_VAR(T3DSFileSaver, saver, CALLF0(New3DSFileSaver))
+	TRY
+		ASSIGN(selectedObjects, CALLF0(dlgOutput.GetSelectedObjects))
+		LOCAL_VAR(TBOOL, useLocalCS, CALLF0(dlgOutput.GetUseLocalCS))
+		LOCAL_VAR(REF(TSpaceTransform), spaceTransform, CALLF0(dlgOutput.GetSpaceTransform))
+		LOCAL_VAR(TSTRING, matRenParamsPath, CALLF0(dlgOutput.GetMatRenParamsPath))
+		CALLP5(saver.Write3DSFile, EXPORT_FILE_NAME, selectedObjects, useLocalCS, spaceTransform, matRenParamsPath)
+	END_TRY
+	CATCH
+		SHOW_ERROR_BOX(T("Kerrax 3DS Exporter"), CURRENT_EXCEPTION)
+		HIDE_PROGRESS_BAR
+		RETURN_VAL(IMPEXP_FAIL)
+	END_CATCH
+
+	// Show dialog with information about import
+	IF(NOT(QUIET))
+		SHOW_PROGRESS_BAR(T("Showing dialog"), 98)
+		LOCAL_VAR(TMeshInfoDlgInput, dlgInfo, CALLF0(NewMeshInfoDlgInput))
+		CALLP1(dlgInfo.SetFileName, EXPORT_FILE_NAME)
+		CALLP1(dlgInfo.SetFileSize, FILE_SIZE(EXPORT_FILE_NAME))
+		CALLP1(dlgInfo.SetExportMode, TRUE)
+		CALLP1(dlgInfo.SetObjectStats, CALLF0(saver.GetObjectStats))
+		TRY
+			CALLP2(inputFile.Open, DLG_INPUT_FILE_PATH, T("wb"))
+			CALLP1(inputFile.WriteString, T("MeshInfoDlgInput"))
+			CALLP1(dlgInfo.Write, inputFile)
+			CALLP0(inputFile.Close)
+			CALLP0(RunUIExe)
+		END_TRY
+		CATCH
+			CALLP0(inputFile.Close)
+			SHOW_ERROR_BOX(T("Kerrax 3DS Exporter"), CURRENT_EXCEPTION)
+		END_CATCH
+	END_IF
+	HIDE_PROGRESS_BAR
+	RETURN_VAL(IMPEXP_SUCCESS)
+END_EXPORT_FUNC
+
+#endif // _3DS_EXPORTER_META

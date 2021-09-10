@@ -1,0 +1,58 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        3dsWriteChunk.meta
+// Purpose:     Definition of T3DSWriteChunk class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef _3DS_WRITE_CHUNK_META
+#define _3DS_WRITE_CHUNK_META
+
+#include "Meta.h"
+#include "File.meta"
+
+CLASS(T3DSWriteChunk)
+
+// Private section:
+MEMBER_VAR(TINT,          __chunkID)
+MEMBER_VAR(TINT,          __chunkSize)
+MEMBER_VAR(TINT,          __chunkPos)
+
+// Public section:
+// Initialize chunk
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __chunkID, 0)
+	ASSIGN(SELF __chunkPos, 0)
+	ASSIGN(SELF __chunkSize, 0)
+END_MEMBER_PROC
+
+// Write chunk id and 0 instead of the chunk's size
+MEMBER_PROC_2(WriteBegin, TFile, file, TINT, chunkID)
+	ASSIGN(SELF __chunkID, chunkID)
+	ASSIGN(SELF __chunkPos, CALLF0(file.GetPos))
+	ASSIGN(SELF __chunkSize, 0)
+	CALLP1(file.WriteUnsignedShort, SELF __chunkID)
+	CALLP1(file.WriteUnsignedLong, SELF __chunkSize)
+END_MEMBER_PROC
+
+// Write true chunk's size
+MEMBER_PROC_1(WriteEnd, TFile, file)
+	LOCAL_VAR(TINT, chunkEndPos, CALLF0(file.GetPos))
+	ASSIGN(SELF __chunkSize, chunkEndPos - SELF __chunkPos)
+	CALLP1(file.SetPos, SELF __chunkPos + 2)
+	CALLP1(file.WriteUnsignedLong, SELF __chunkSize)
+	CALLP1(file.SetPos, chunkEndPos)
+END_MEMBER_PROC
+
+END_CLASS // T3DSWriteChunk
+
+// Global function to create chunks
+GLOBAL_FUNC_0(T3DSWriteChunk, New3DSWriteChunk)
+	LOCAL_VAR(T3DSWriteChunk, chunk, NEW_VAL(T3DSWriteChunk))
+	CALLP0(chunk.Init)
+	RETURN_VAL(chunk)
+END_GLOBAL_FUNC
+
+#endif // _3DS_WRITE_CHUNK_META

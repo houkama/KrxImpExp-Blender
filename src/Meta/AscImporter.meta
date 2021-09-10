@@ -1,0 +1,320 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        AscImporter.meta
+// Purpose:     Main source file for "asc file importer" program
+//              This file is intended to be compiled.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef ASC_IMPORTER_META
+#define ASC_IMPORTER_META
+
+#include "Meta.h"
+#include "ImpExpPathes.meta"
+#include "NameAnalyzer.meta"
+#include "FormatMsg.meta"
+#include "SceneAnalyzer.meta"
+#include "AscFileLoader.meta"
+#include "AscImporterDlgInput.meta"
+#include "AscImporterDlgOutput.meta"
+#include "RunUIExe.meta"
+
+// ASC file importer main function
+IMPORT_FUNC(KrxAscImp, T("ASC"), T("Kerrax ASCII Model"), T("Kerrax"), 2008, 1.10, 0x334e19c6, 0x4c84148a, 1024229)
+
+	// Import - part 1 (loading file contents into member variables of class TASCFileLoader, without any changes in 3D scene)
+	LOCAL_VAR(TASCFileLoader, loader, CALLF0(NewASCFileLoader))
+	TRY
+		// load .asc file
+		CALLP1(loader.ReadASCFile, IMPORT_FILE_NAME)
+	END_TRY
+	CATCH
+		SHOW_ERROR_BOX(T("Kerrax ASC Importer"), CURRENT_EXCEPTION)
+		HIDE_PROGRESS_BAR
+		RETURN_VAL(IMPEXP_FAIL)
+	END_CATCH
+	
+	// dialog input data
+	LOCAL_VAR(TASCImporterDlgInput, dlgInput, CALLF0(NewASCImporterDlgInput))
+	CALLP1(dlgInput.SetImportFileName, IMPORT_FILE_NAME)
+	CALLP1(dlgInput.SetImportFileSize, IMPORT_FILE_SIZE)
+
+	// set asc file type in dialog input data
+	LOCAL_VAR(TINT, ascType, CALLF0(loader.GetAscType))
+	CALLP1(dlgInput.SetAscType, ascType)
+	
+	// set importing model info
+	CALLP1(dlgInput.SetNumFileMeshes, CALLF0(loader.GetNumMeshes))
+	CALLP1(dlgInput.SetNumFileSlots, CALLF0(loader.GetNumSlots))
+	CALLP1(dlgInput.SetNumFileBones, CALLF0(loader.GetNumBones))
+	CALLP1(dlgInput.SetAnimStartFrame, CALLF0(loader.GetAnimStartFrame))
+	CALLP1(dlgInput.SetAnimEndFrame, CALLF0(loader.GetAnimEndFrame))
+	CALLP1(dlgInput.SetAnimFrameRate, CALLF0(loader.GetAnimFrameRate))
+	
+	// set default path to a folder with sample meshes
+	CALLP1(dlgInput.SetSampleMeshesDir, SAMPLE_MESHES_DIR_PATH)
+
+	// set 3D editor's settings in dialog input data
+	CALLP1(dlgInput.SetMinFrame, MIN_FRAME)
+	CALLP1(dlgInput.SetMaxFrame, MAX_FRAME)
+	CALLP1(dlgInput.SetSystemUnitsPerFileUnit, DEFAULT_SYSTEM_UNITS_PER_FILE_UNIT)
+	
+	// set prefixes in dialog input data
+	CALLP1(dlgInput.SetUniquePrefix, T(""))
+	CALLP1(dlgInput.SetSelectedPrefix, T(""))
+	CALLP1(dlgInput.SetPrefixes, EMPTY_ARRAY(TSTRING))
+	CALLP1(dlgInput.SetCurrentSceneMode, CURSCN_REPLACE_SCENE)
+	
+	// analyze the scene
+	LOCAL_VAR(TSceneAnalyzer, sceneAnalyzer, CALLF0(AnalyzeScene))
+	
+	IF(ascType == ASCTYPE_STATIC_MESH)
+		CALLP1(dlgInput.SetUniquePrefix, CALLF0(sceneAnalyzer.GetUniquePrefix))
+	ELSE_IF(ascType == ASCTYPE_MORPH_MESH)
+		CALLP1(dlgInput.SetUniquePrefix, CALLF0(sceneAnalyzer.GetUniquePrefix))
+	ELSE_IF(ascType == ASCTYPE_MORPH_ANIM)
+		CALLP1(sceneAnalyzer.FindAppropriateMorphMeshes, CALLF0(loader.GetObjectsDesc))
+		CALLP1(dlgInput.SetPrefixes, CALLF0(sceneAnalyzer.GetAppropriatePrefixes))
+		LOCAL_VAR(TARRAY(TSTRING), selectedPrefixes, CALLF0(sceneAnalyzer.GetSelectedAppropriatePrefixes))
+		IF(SIZE(selectedPrefixes) != 0)
+			CALLP1(dlgInput.SetSelectedPrefix, GET_ELEM(selectedPrefixes, 0))
+		END_IF
+	ELSE_IF(ascType == ASCTYPE_DYNAMIC_MESH)
+		CALLP1(sceneAnalyzer.FindAppropriateDynamicModels, CALLF0(loader.GetObjectsDesc))
+		CALLP1(dlgInput.SetUniquePrefix, CALLF0(sceneAnalyzer.GetUniquePrefix))
+		CALLP1(dlgInput.SetPrefixes, CALLF0(sceneAnalyzer.GetScenePrefixes))
+		//CALLP1(dlgInput.SetPrefixes, CALLF0(sceneAnalyzer.GetAppropriatePrefixes)) // commented by request from wog.de
+		LOCAL_VAR(TARRAY(TSTRING), selectedPrefixes, CALLF0(sceneAnalyzer.GetSelectedAppropriatePrefixes))
+		IF((SIZE(selectedPrefixes) == 0) AND (SIZE(CALLF0(sceneAnalyzer.GetAppropriatePrefixes)) != 0))
+			APPEND(selectedPrefixes, GET_ELEM(CALLF0(sceneAnalyzer.GetAppropriatePrefixes), 0))
+		END_IF
+		IF(SIZE(selectedPrefixes) != 0)
+			CALLP1(dlgInput.SetSelectedPrefix, GET_ELEM(selectedPrefixes, 0))
+			CALLP1(dlgInput.SetCurrentSceneMode, CURSCN_REPLACE_SKIN)
+		END_IF
+	ELSE_IF(ascType == ASCTYPE_DYNAMIC_ANIM)
+		CALLP1(sceneAnalyzer.FindAppropriateDynamicModels, CALLF0(loader.GetObjectsDesc))
+		CALLP1(dlgInput.SetPrefixes, CALLF0(sceneAnalyzer.GetScenePrefixes))
+		//CALLP1(dlgInput.SetPrefixes, CALLF0(sceneAnalyzer.GetAppropriatePrefixes)) // commented by request from wog.de
+		LOCAL_VAR(TARRAY(TSTRING), selectedPrefixes, CALLF0(sceneAnalyzer.GetSelectedAppropriatePrefixes))
+		IF((SIZE(selectedPrefixes) == 0) AND (SIZE(CALLF0(sceneAnalyzer.GetAppropriatePrefixes)) != 0))
+			APPEND(selectedPrefixes, GET_ELEM(CALLF0(sceneAnalyzer.GetAppropriatePrefixes), 0))
+		END_IF
+		IF(SIZE(selectedPrefixes) != 0)
+			CALLP1(dlgInput.SetSelectedPrefix, GET_ELEM(selectedPrefixes, 0))
+		END_IF
+	END_IF
+
+	// set slots and bones in dialog input data
+	IF(ascType == ASCTYPE_MORPH_MESH)
+		CALLP1(dlgInput.SetSlots, CALLF0(sceneAnalyzer.GetSceneSlots))
+		LOCAL_VAR(TARRAY(TSTRING), selectedSlots, CALLF0(sceneAnalyzer.GetSelectedSlots))
+		IF(SIZE(selectedSlots) != 0)
+			CALLP1(dlgInput.SetSelectedSlot, GET_ELEM(selectedSlots, 0))
+			CALLP1(dlgInput.SetCurrentSceneMode, CURSCN_LINK_TO_SLOT)
+		END_IF
+		CALLP1(dlgInput.SetBones, CALLF0(sceneAnalyzer.GetSceneBones))
+		LOCAL_VAR(TARRAY(TSTRING), selectedBones, CALLF0(sceneAnalyzer.GetSelectedBones))
+		IF(SIZE(selectedBones) != 0)
+			CALLP1(dlgInput.SetSelectedBone, GET_ELEM(selectedBones, 0))
+			CALLP1(dlgInput.SetCurrentSceneMode, CURSCN_LINK_TO_BONE)
+		END_IF
+	END_IF
+			
+	// set way to skin model in dialog input data
+	IF(ascType == ASCTYPE_DYNAMIC_MESH)
+		CALLP1(dlgInput.SetSupportedSkinTypes, GET_SUPPORTED_SKIN_TYPES)
+	END_IF
+	
+	// set animation settings in dialog input data
+	IF(ascType == ASCTYPE_MORPH_ANIM OR ascType == ASCTYPE_DYNAMIC_ANIM)
+		CALLP1(dlgInput.SetAnimStartFrame, CALLF0(loader.GetAnimStartFrame))
+		CALLP1(dlgInput.SetAnimEndFrame, CALLF0(loader.GetAnimEndFrame))
+		CALLP1(dlgInput.SetAnimFrameRate, CALLF0(loader.GetAnimFrameRate))
+	END_IF
+	
+	// show dialog and analyze the dialog's result
+	LOCAL_VAR(TASCImporterDlgOutput, dlgOutput, CALLF1(NewASCImporterDlgOutput, dlgInput))
+	LOCAL_VAR(TFile, inputFile, CALLF0(NewFile))
+	LOCAL_VAR(TFile, outputFile, CALLF0(NewFile))
+	IF(NOT(QUIET))
+		TRY
+			SHOW_PROGRESS_BAR(T("Showing dialog"), 0)
+			CALLP2(inputFile.Open, DLG_INPUT_FILE_PATH, T("wb"))
+			CALLP1(inputFile.WriteString, T("ASCImporterDlgInput"))
+			CALLP1(dlgInput.Write, inputFile)
+			CALLP0(inputFile.Close)
+			CALLP0(RunUIExe)
+			CALLP2(outputFile.Open, DLG_OUTPUT_FILE_PATH, T("rb"))
+			LOCAL_VAR(TSTRING, structName, CALLF0(outputFile.ReadString))
+			CALLP1(dlgOutput.Read, outputFile)
+			CALLP0(outputFile.Close)
+			
+			IF(NOT(CALLF0(dlgOutput.GetContinueImport)))
+				HIDE_PROGRESS_BAR
+				RETURN_VAL(IMPEXP_CANCEL)
+			END_IF
+		END_TRY
+		CATCH
+			CALLP0(inputFile.Close)
+			CALLP0(outputFile.Close)
+			SHOW_ERROR_BOX(T("Kerrax ASC Importer"), CURRENT_EXCEPTION)
+			HIDE_PROGRESS_BAR
+			RETURN_VAL(IMPEXP_CANCEL)
+		END_CATCH
+	END_IF
+
+	// Set selected model prefix
+	CALLP1(loader.SetModelPrefix, CALLF0(dlgOutput.GetSelectedPrefix))
+	CALLP1(loader.SetSkinType, CALLF0(dlgOutput.GetSelectedSkinType))
+	
+	// Import - part 2
+	IF(ascType == ASCTYPE_STATIC_MESH)
+		
+		LOCAL_VAR(TINT, curSceneMode, CALLF0(dlgOutput.GetCurrentSceneMode))
+		IF(curSceneMode == CURSCN_REPLACE_SCENE)
+			RESET_SCENE
+		END_IF
+
+		LOCAL_VAR(REF(TSpaceTransform), spaceTransform, CALLF0(dlgOutput.GetSpaceTransform))
+		CALLP1(loader.SetSpaceTransform, spaceTransform)
+		
+		IF(CALLF0(dlgOutput.GetConnectBones))
+			CALLP0(loader.CreateConnectedBones)
+		ELSE
+			CALLP0(loader.CreateCubicBones)
+		END_IF
+		CALLP0(loader.CreateSlots)
+		IF(CALLF0(dlgOutput.GetUseSampleMeshes))
+			CALLP1(loader.ReplaceBonesAndSlotsWithSampleMeshes, CALLF0(dlgOutput.GetSampleMeshesDir))
+		END_IF
+
+		CALLP0(loader.CreateMaterials)
+		CALLP0(loader.CreateMeshes)
+
+		// bones: not renderable
+		LOCAL_VAR(TObjectDisplayProps, dispProps, CALLF0(NewObjectDisplayProps))
+		CALLP1(dispProps.SetRenderable, FALSE)
+		CALLP3(loader.SetDispProps, OBJTYPE_BONE, T("Bones"), dispProps)
+		
+		// slots: transparent
+		CALLP1(dispProps.SetTransparent, TRUE)
+		CALLP3(loader.SetDispProps, OBJTYPE_SLOT, T("Slots"), dispProps)
+		
+		// meshes: normal
+		CALLP0(dispProps.Reset)
+		CALLP3(loader.SetDispProps, OBJTYPE_MESH, T("Meshes"), dispProps)
+
+	ELSE_IF(ascType == ASCTYPE_MORPH_MESH)
+		
+		LOCAL_VAR(TINT, curSceneMode, CALLF0(dlgOutput.GetCurrentSceneMode))
+		IF(curSceneMode == CURSCN_REPLACE_SCENE)
+			RESET_SCENE
+		END_IF
+
+		LOCAL_VAR(REF(TSpaceTransform), spaceTransform, CALLF0(dlgOutput.GetSpaceTransform))
+		CALLP1(loader.SetSpaceTransform, spaceTransform)
+		
+		CALLP0(loader.CreateMaterials)
+		CALLP0(loader.CreateMeshes)
+
+		// meshes: normal
+		LOCAL_VAR(TObjectDisplayProps, dispProps, CALLF0(NewObjectDisplayProps))
+		CALLP3(loader.SetDispProps, OBJTYPE_MESH, T("Meshes"), dispProps)
+			
+		IF(curSceneMode == CURSCN_LINK_TO_SLOT)
+			CALLP1(loader.LinkModelToObject, CALLF0(dlgOutput.GetSelectedSlot))
+		ELSE_IF(curSceneMode == CURSCN_LINK_TO_BONE)
+			CALLP1(loader.LinkModelToObject, CALLF0(dlgOutput.GetSelectedBone))
+		END_IF
+		
+	ELSE_IF(ascType == ASCTYPE_MORPH_ANIM)
+
+		LOCAL_VAR(REF(TSpaceTransform), spaceTransform, CALLF0(dlgOutput.GetSpaceTransform))
+		CALLP1(loader.SetSpaceTransform, spaceTransform)
+		LOCAL_VAR(REF(TTimeTransform), timeTransform, CALLF0(dlgOutput.GetTimeTransform))
+		CALLP1(loader.SetTimeTransform, timeTransform)
+		
+		LOCAL_VAR(TINT, curAnimMode, CALLF0(dlgOutput.GetCurrentAnimationMode))
+		IF(curAnimMode == CURANIM_REPLACE_ANIMATION)
+			CALLP0(loader.DeleteOldMorphAnimation)
+		END_IF
+		CALLP0(loader.ApplyAnimFrameRate)
+		CALLP0(loader.ApplyAnimRange)
+		CALLP0(loader.ApplyMorphAnimation)
+			
+	ELSE_IF(ascType == ASCTYPE_DYNAMIC_MESH)
+
+		LOCAL_VAR(TINT, curSceneMode, CALLF0(dlgOutput.GetCurrentSceneMode))
+		IF(curSceneMode == CURSCN_REPLACE_SCENE)
+			RESET_SCENE
+		END_IF
+
+		LOCAL_VAR(REF(TSpaceTransform), spaceTransform, CALLF0(dlgOutput.GetSpaceTransform))
+		CALLP1(loader.SetSpaceTransform, spaceTransform)
+		
+		IF((curSceneMode != CURSCN_REPLACE_SKIN) AND (curSceneMode != CURSCN_MERGE_SKIN))
+			IF(CALLF0(dlgOutput.GetConnectBones))
+				CALLP0(loader.CreateConnectedBones)
+			ELSE
+				CALLP0(loader.CreateCubicBones)
+			END_IF
+			CALLP0(loader.CreateSlots)
+			IF(CALLF0(dlgOutput.GetUseSampleMeshes))
+				CALLP1(loader.ReplaceBonesAndSlotsWithSampleMeshes, CALLF0(dlgOutput.GetSampleMeshesDir))
+			END_IF
+		END_IF
+		
+		IF(curSceneMode == CURSCN_REPLACE_SKIN)
+			CALLP0(loader.DeleteOldMeshes)
+		END_IF
+
+		IF((curSceneMode == CURSCN_REPLACE_SKIN) OR (curSceneMode == CURSCN_MERGE_SKIN))
+			CALLP0(loader.StoreModelPose)
+			CALLP0(loader.InitialModelPose)
+		END_IF
+		
+		CALLP0(loader.CreateMaterials)
+		CALLP0(loader.CreateMeshes)
+		CALLP0(loader.ApplySkin)
+				
+		IF((curSceneMode == CURSCN_REPLACE_SKIN) OR (curSceneMode == CURSCN_MERGE_SKIN))
+			CALLP0(loader.RestoreModelPose)
+		END_IF
+	
+		// bones and slots: not renderable
+		LOCAL_VAR(TObjectDisplayProps, dispProps, CALLF0(NewObjectDisplayProps))
+		CALLP1(dispProps.SetRenderable, FALSE)
+		CALLP3(loader.SetDispProps, OBJTYPE_BONE, T("Bones"), dispProps)
+		CALLP3(loader.SetDispProps, OBJTYPE_SLOT, T("Slots"), dispProps)
+		
+		// meshes: transparent
+		CALLP1(dispProps.SetRenderable, TRUE)
+		CALLP1(dispProps.SetTransparent, TRUE)
+		CALLP3(loader.SetDispProps, OBJTYPE_MESH, T("Meshes"), dispProps)	
+
+	ELSE_IF(ascType == ASCTYPE_DYNAMIC_ANIM)
+	
+		LOCAL_VAR(REF(TSpaceTransform), spaceTransform, CALLF0(dlgOutput.GetSpaceTransform))
+		CALLP1(loader.SetSpaceTransform, spaceTransform)
+		LOCAL_VAR(REF(TTimeTransform), timeTransform, CALLF0(dlgOutput.GetTimeTransform))
+		CALLP1(loader.SetTimeTransform, timeTransform)
+		
+		LOCAL_VAR(TINT, curAnimMode, CALLF0(dlgOutput.GetCurrentAnimationMode))
+		IF(curAnimMode == CURANIM_REPLACE_ANIMATION)
+			CALLP0(loader.DeleteOldTMAnimation)
+		END_IF
+		
+		CALLP0(loader.ApplyAnimFrameRate)
+		CALLP0(loader.ApplyAnimRange)
+		CALLP0(loader.ApplyTMAnimation)
+	
+	END_IF
+	HIDE_PROGRESS_BAR
+	RETURN_VAL(IMPEXP_SUCCESS)
+	
+END_IMPORT_FUNC
+
+#endif // ASC_IMPORTER_META

@@ -1,0 +1,127 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        3dsExporterDlgInput.meta
+// Purpose:     Definition of T3DSExporterDlgInput class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef _3DS_EXPORTER_DLG_INPUT_META
+#define _3DS_EXPORTER_DLG_INPUT_META
+
+#include "Meta.h"
+#include "File.meta"
+
+// Input dialog data for 3d studio mesh exporter
+CLASS(T3DSExporterDlgInput)
+
+// Private section:
+MEMBER_VAR(TSTRING,         __exportFileName)
+MEMBER_VAR(TARRAY(TSTRING), __sceneObjects)
+MEMBER_VAR(TARRAY(TSTRING), __selectedObjects)
+MEMBER_VAR(TBOOL,           __useLocalCS)
+MEMBER_VAR(TFLOAT,          __fileUnitsPerSystemUnit)
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __exportFileName,  EMPTY_STRING)
+	ASSIGN(SELF __sceneObjects,    EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedObjects, EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __useLocalCS,      TRUE)
+	ASSIGN(SELF __fileUnitsPerSystemUnit, 1)
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(Write, TFile, f)
+	CALLP1(f.WriteString, SELF __exportFileName)
+	CALLP1(f.WriteUnsignedLong, SIZE(SELF __sceneObjects))
+	FOR(i, 0, SIZE(SELF __sceneObjects))
+		CALLP1(f.WriteString, GET_ELEM(SELF __sceneObjects, i))
+	END_FOR
+
+	CALLP1(f.WriteUnsignedLong, SIZE(SELF __selectedObjects))
+	FOR(i, 0, SIZE(SELF __selectedObjects))
+		CALLP1(f.WriteString, GET_ELEM(SELF __selectedObjects, i))
+	END_FOR
+	CALLP1(f.WriteBool, SELF __useLocalCS)
+	CALLP1(f.WriteFloat, SELF __fileUnitsPerSystemUnit)
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(Read, TFile, f)
+	ASSIGN(SELF __exportFileName, CALLF0(f.ReadString))
+	
+	LOCAL_VAR(TINT, numSceneObjects, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __sceneObjects, EMPTY_ARRAY(TSTRING))
+	FOR(i, 0, numSceneObjects)
+		APPEND(SELF __sceneObjects, CALLF0(f.ReadString))
+	END_FOR
+	
+	LOCAL_VAR(TINT, numSelectedObjects, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __selectedObjects, EMPTY_ARRAY(TSTRING))
+	FOR(i, 0, numSelectedObjects)
+		APPEND(SELF __selectedObjects, CALLF0(f.ReadString))
+	END_FOR
+	ASSIGN(SELF __useLocalCS, CALLF0(f.ReadBool))
+	ASSIGN(SELF __fileUnitsPerSystemUnit, CALLF0(f.ReadFloat))
+END_MEMBER_PROC
+
+// Export file name
+MEMBER_PROC_1(SetExportFileName, TSTRING, exportFileName)
+	ASSIGN(SELF __exportFileName, exportFileName)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TSTRING), GetExportFileName)
+	RETURN_VAL(SELF __exportFileName)
+END_MEMBER_FUNC
+	
+// Array of names of all scene objects
+MEMBER_PROC_1(SetSceneObjects, TARRAY(TSTRING), sceneObjects)
+	ASSIGN(SELF __sceneObjects, sceneObjects)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSceneObjects)
+	RETURN_VAL(SELF __sceneObjects)
+END_MEMBER_FUNC
+
+// Array of names of selected scene objects
+MEMBER_PROC_1(SetSelectedObjects, TARRAY(TSTRING), selectedObjects)
+	ASSIGN(SELF __selectedObjects, selectedObjects)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSelectedObjects)
+	RETURN_VAL(SELF __selectedObjects)
+END_MEMBER_FUNC
+
+// Use local coordinate system for vertices (TRUE - use local cordinate system, 
+// FALSE - use world coordinate system)
+MEMBER_PROC_1(SetUseLocalCS, TBOOL, useLocalCS)
+	ASSIGN(SELF __useLocalCS, useLocalCS)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TBOOL, GetUseLocalCS)
+	RETURN_VAL(SELF __useLocalCS)
+END_MEMBER_FUNC
+
+// Default number of file units per 1 system unit
+MEMBER_PROC_1(SetFileUnitsPerSystemUnit, TFLOAT, scaleCoef)
+	ASSIGN(SELF __fileUnitsPerSystemUnit, scaleCoef)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TFLOAT, GetFileUnitsPerSystemUnit)
+	RETURN_VAL(SELF __fileUnitsPerSystemUnit)
+END_MEMBER_FUNC
+
+END_CLASS // T3DSExporterDlgInput
+
+
+// Global function to create object of class T3DSExporterDlgInput
+GLOBAL_FUNC_0(T3DSExporterDlgInput, New3DSExporterDlgInput)
+	LOCAL_VAR(T3DSExporterDlgInput, dlgInput, NEW_VAL(T3DSExporterDlgInput))
+	CALLP0(dlgInput.Init)
+	RETURN_VAL(dlgInput)
+END_GLOBAL_FUNC
+
+#endif // _3DS_EXPORTER_DLG_INPUT_META

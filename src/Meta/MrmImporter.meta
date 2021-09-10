@@ -1,0 +1,111 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        MrmImporter.meta
+// Purpose:     Main source file for "mrm file importer" program
+//              This file is intended to be compiled.
+// Author:      Vitaly Baranov
+// Created:     June 6, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef MRM_IMPORTER_META
+#define MRM_IMPORTER_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "FormatMsg.meta"
+#include "ObjectStats.meta"
+#include "MrmFileLoader.meta"
+#include "ObjArrayUtils.meta"
+#include "MeshImporterDlgInput.meta"
+#include "MeshImporterDlgOutput.meta"
+#include "MeshInfoDlgInput.meta"
+#include "ImpExpPathes.meta"
+#include "RunUIExe.meta"
+
+// MSH file importer main function
+IMPORT_FUNC(KrxMrmImp, T("MRM"), T("Kerrax Multi-Resolution Mesh"), T("Kerrax"), 2008, 1.10, 0x367777cc, 0x32d13be6, 1024233)
+
+	// dialog input data
+	LOCAL_VAR(TMeshImporterDlgInput, dlgInput, CALLF0(NewMeshImporterDlgInput))
+	CALLP1(dlgInput.SetFileFormat, T("MRM"))
+	CALLP1(dlgInput.SetImportFileName, IMPORT_FILE_NAME)
+	CALLP1(dlgInput.SetImportFileSize, IMPORT_FILE_SIZE)
+	CALLP1(dlgInput.SetSystemUnitsPerFileUnit, DEFAULT_SYSTEM_UNITS_PER_FILE_UNIT)
+	CALLP1(dlgInput.SetCurrentSceneMode, CURSCN_REPLACE_SCENE)
+
+	// show dialog and analyze the dialog's result
+	LOCAL_VAR(TMeshImporterDlgOutput, dlgOutput, CALLF1(NewMeshImporterDlgOutput, dlgInput))
+	LOCAL_VAR(TFile, inputFile, CALLF0(NewFile))
+	LOCAL_VAR(TFile, outputFile, CALLF0(NewFile))
+	IF(NOT(QUIET))
+		TRY
+			SHOW_PROGRESS_BAR(T("Showing dialog"), 0)
+			CALLP2(inputFile.Open, DLG_INPUT_FILE_PATH, T("wb"))
+			CALLP1(inputFile.WriteString, T("MeshImporterDlgInput"))
+			CALLP1(dlgInput.Write, inputFile)
+			CALLP0(inputFile.Close)
+			CALLP0(RunUIExe)
+			CALLP2(outputFile.Open, DLG_OUTPUT_FILE_PATH, T("rb"))
+			LOCAL_VAR(TSTRING, structName, CALLF0(outputFile.ReadString))
+			CALLP1(dlgOutput.Read, outputFile)
+			CALLP0(outputFile.Close)
+			
+			IF(NOT(CALLF0(dlgOutput.GetContinueImport)))
+				HIDE_PROGRESS_BAR
+				RETURN_VAL(IMPEXP_CANCEL)
+			END_IF
+		END_TRY
+		CATCH
+			CALLP0(inputFile.Close)
+			CALLP0(outputFile.Close)
+			SHOW_ERROR_BOX(T("Kerrax MRM Importer"), CURRENT_EXCEPTION)
+			HIDE_PROGRESS_BAR
+			RETURN_VAL(IMPEXP_CANCEL)
+		END_CATCH
+	END_IF
+	
+	// Import itself
+	LOCAL_VAR(TMRMFileLoader, loader, CALLF0(NewMRMFileLoader))
+	TRY
+		// delete old scene objects if user wish to do it
+		IF(CALLF0(dlgOutput.GetCurrentSceneMode) == CURSCN_REPLACE_SCENE)
+			RESET_SCENE
+		END_IF
+
+		// load .msh file
+		LOCAL_VAR(REF(TSpaceTransform), spaceTransform, CALLF0(dlgOutput.GetSpaceTransform))
+		CALLP2(loader.ReadMRMFile, IMPORT_FILE_NAME, spaceTransform)
+	END_TRY
+	CATCH
+		SHOW_ERROR_BOX(T("Kerrax MRM Importer"), CURRENT_EXCEPTION)
+		HIDE_PROGRESS_BAR
+		RETURN_VAL(IMPEXP_FAIL)
+	END_CATCH
+
+	// Show dialog with information about import
+	IF(NOT(QUIET))
+		SHOW_PROGRESS_BAR(T("Showing dialog"), 98)
+		LOCAL_VAR(TMeshInfoDlgInput, dlgInfo, CALLF0(NewMeshInfoDlgInput))
+		CALLP1(dlgInfo.SetFileName, IMPORT_FILE_NAME)
+		CALLP1(dlgInfo.SetFileSize, IMPORT_FILE_SIZE)
+		CALLP1(dlgInfo.SetExportMode, FALSE)
+		CALLP1(dlgInfo.SetObjectStats, CALLF0(loader.GetObjectStats))
+		TRY
+			CALLP2(inputFile.Open, DLG_INPUT_FILE_PATH, T("wb"))
+			CALLP1(inputFile.WriteString, T("MeshInfoDlgInput"))
+			CALLP1(dlgInfo.Write, inputFile)
+			CALLP0(inputFile.Close)
+			CALLP0(RunUIExe)
+		END_TRY
+		CATCH
+			CALLP0(inputFile.Close)
+			SHOW_ERROR_BOX(T("Kerrax MRM Importer"), CURRENT_EXCEPTION)
+		END_CATCH
+	END_IF
+
+	HIDE_PROGRESS_BAR
+	RETURN_VAL(IMPEXP_SUCCESS)
+END_IMPORT_FUNC
+
+#endif // MRM_IMPORTER_META

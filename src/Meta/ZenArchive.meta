@@ -1,0 +1,292 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        ZenFileLoader.meta
+// Purpose:     Definition of TZenFileLoader class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef ZEN_ARCHIVE_META
+#define ZEN_ARCHIVE_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "FormatMsg.meta"
+#include "ZenChunk.meta"
+
+// ZenGin archive's modes
+#define ZENMODE_BINARY		0
+#define ZENMODE_ASCII		1
+#define ZENMODE_BIN_SAFE	3
+
+// Types in ZenGin archives
+#define ZENTYPE_STRING		0x01
+
+// Error messages
+#define ErrFileIsNotZen		_T("File is not a ZenGin archive.\nFile name: \"%1\".")
+#define ErrZenVerExpected	_T("Cannot read archive, 'ver' keyword expected.\nPosition: %1.\nFile name: \"%2\".")
+#define ErrUnknownZenMode	_T("Unknown archive mode.\nPosition: %1.\nFile name: \"%2\".")
+#define ErrObjectsKeyword   T("Cannot read archive, 'objects' keyword expected.\nPosition: %1.\nFile name: \"%2\".")
+#define ErrStringExpected   T("A string expected.\nPosition: %1.\nFile name: \"%2\".")
+
+// Class to work with zen-archives
+CLASS(TZENArchive)
+
+// private section
+MEMBER_VAR(TINT,  __zenVersion)
+MEMBER_VAR(TINT,  __zenMode)
+MEMBER_VAR(TBOOL, __saveGame)
+MEMBER_VAR(TINT,  __numObjects)
+
+MEMBER_FUNC_1(TSTRING, __ReadLine, TFile, file)
+	LOCAL_VAR(TSTRING, ln, EMPTY_STRING)
+	LOCAL_VAR(TSTRING, ch, EMPTY_STRING)
+	WHILE(NOT(CALLF0(file.Eof)))
+		LOCAL_VAR(TINT, ch, CALLF0(file.ReadUnsignedChar))
+		IF(ch != 0x0A)
+			STRCAT(ln, INT_AS_CHAR(ch))
+		ELSE
+			BREAK
+		END_IF
+	END_WHILE
+	RETURN_VAL(ln)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(__ReadCommonHeader, TFile, file)
+	// the first line must be "ZenGin Archive"
+	LOCAL_VAR(TSTRING, line, CALLF1(SELF __ReadLine, file))
+	IF(line != T("ZenGin Archive"))
+		THROW(CALLF2(FormatMsg1, ErrFileIsNotZen, CALLF0(file.GetName)))
+	END_IF
+	
+	// the second line must be "ver 0" or "ver 1"
+	LOCAL_VAR(TINT, pos, CALLF0(file.GetPos))
+	ASSIGN(line, CALLF1(SELF __ReadLine, file))
+	IF(SUBSTR(line, 0, 3) != T("ver"))
+		THROW(CALLF3(FormatMsg2, ErrZenVerExpected, HEXFORM(pos), CALLF0(file.GetName)))
+	END_IF
+	ASSIGN(SELF __zenVersion, STRING_TO_INT(SUBSTR(line, 3, STRLEN(line))))
+	
+	// skipping an archive's class
+	ASSIGN(line, CALLF1(SELF __ReadLine, file))
+	
+	// the third line is a type of the archive
+	ASSIGN(pos, CALLF0(file.GetPos))
+	ASSIGN(line, CALLF1(SELF __ReadLine, file))
+	IF(line == T("BINARY"))
+		ASSIGN(SELF __zenMode, ZENMODE_BINARY)
+	ELSE_IF(line == T("ASCII"))
+		ASSIGN(SELF __zenMode, ZENMODE_ASCII)
+	ELSE_IF(line == T("BIN_SAFE"))
+		ASSIGN(SELF __zenMode, ZENMODE_BIN_SAFE)
+	ELSE
+		THROW(CALLF3(FormatMsg2, ErrUnknownZenMode, HEXFORM(pos), CALLF0(file.GetName)))
+	END_IF
+	
+	// rest of header
+	ASSIGN(SELF __saveGame, FALSE)
+	WHILE(NOT(CALLF0(file.Eof)))
+		ASSIGN(pos, CALLF0(file.GetPos))
+		ASSIGN(line, CALLF1(SELF __ReadLine, file))
+		IF(line == T("END"))
+			BREAK
+		ELSE_IF(SUBSTR(line, 0, 7) == T("objects") AND SELF __zenVersion == 0)
+			CALLP1(file.SetPos, pos)
+			BREAK
+		ELSE_IF(SUBSTR(line, 0, 8) == T("saveGame"))
+			IF(STRING_TO_INT(SUBSTR(line, 8, STRLEN(line))) == 1)
+				ASSIGN(SELF __saveGame, TRUE)
+			END_IF
+		END_IF
+	END_WHILE
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__ReadHeader_ASCII_Binary, TFile, file)
+	LOCAL_VAR(TINT, pos, CALLF0(file.GetPos))
+	LOCAL_VAR(TSTRING, line, CALLF1(SELF __ReadLine, file))
+	ASSIGN(SELF __numObjects, 0)
+	IF(SUBSTR(line, 0, 7) == T("objects"))
+		LOCAL_VAR(TSTRING, strObjects, SUBSTR(line, 7, STRLEN(line)))
+		LOCAL_VAR(TINT, posSpace, STRFIND(strObjects, T(" ")))
+		IF(posSpace != NOT_FOUND)
+			ASSIGN(strObjects, SUBSTR(strObjects, 0, posSpace))
+		END_IF
+		ASSIGN(SELF __numObjects, STRING_TO_INT(strObjects))
+	ELSE
+		THROW(CALLF3(FormatMsg2, ErrObjectsKeyword, HEXFORM(pos), CALLF0(file.GetName)))
+	END_IF
+	ASSIGN(line, CALLF1(SELF __ReadLine, file)) // END
+	ASSIGN(line, CALLF1(SELF __ReadLine, file)) // empty line
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__ReadHeader_BinSafe, TFile, file)
+	LOCAL_VAR(TINT, binSafeVersion, CALLF0(file.ReadUnsignedLong))
+	ASSIGN(SELF __numObjects, CALLF0(file.ReadUnsignedLong))
+	LOCAL_VAR(TINT, mapPos, CALLF0(file.ReadUnsignedLong))
+END_MEMBER_PROC
+
+MEMBER_FUNC_1(TSTRING, __ReadString_ASCII, TFile, file)
+	LOCAL_VAR(TSTRING, str, CALLF1(SELF __ReadLine, file))
+	WHILE(SUBSTR(str, 0, 1) == T("\t"))
+		ASSIGN(str, SUBSTR(str, 1, STRLEN(str)))
+	END_WHILE
+	RETURN_VAL(str)
+END_MEMBER_FUNC
+
+MEMBER_FUNC_1(TSTRING, __ReadString_Binary, TFile, file)
+	LOCAL_VAR(TSTRING, str, CALLF0(file.ReadString))
+	RETURN_VAL(str)
+END_MEMBER_FUNC
+
+MEMBER_FUNC_1(TSTRING, __ReadString_BinSafe, TFile, file)
+	LOCAL_VAR(TINT, pos, CALLF0(file.GetPos))
+	LOCAL_VAR(TSTRING, str, EMPTY_STRING)
+	LOCAL_VAR(TINT, typ, CALLF0(file.ReadUnsignedChar))
+	IF(typ != ZENTYPE_STRING)
+		THROW(CALLF3(FormatMsg2, ErrStringExpected, HEXFORM(pos), CALLF0(file.GetName)))
+	END_IF
+	LOCAL_VAR(TINT, len, CALLF0(file.ReadUnsignedShort))
+	FOR(i, 0, len)
+		STRCAT(str, INT_AS_CHAR(CALLF0(file.ReadUnsignedChar)))
+	END_FOR
+	RETURN_VAL(str)
+END_MEMBER_FUNC
+
+MEMBER_FUNC_1(TSTRING, __ReadString, TFile, file)
+	IF(SELF __zenMode == ZENMODE_ASCII)
+		RETURN_VAL(CALLF1(SELF __ReadString_ASCII, file))
+	ELSE_IF(SELF __zenMode == ZENMODE_BINARY)
+		RETURN_VAL(CALLF1(SELF __ReadString_Binary, file))
+	ELSE
+		RETURN_VAL(CALLF1(SELF __ReadString_BinSafe, file))
+	END_IF
+END_MEMBER_FUNC
+
+MEMBER_FUNC_1(TZENChunk, __ReadChunkStart_ASCII_BinSafe, TFile, file)
+	LOCAL_VAR(TZENChunk, emptyChunk, CALLF0(NewZENChunk))
+	LOCAL_VAR(TZENChunk, chunk, CALLF0(NewZENChunk))
+	CALLP1(chunk.SetPos, CALLF0(file.GetPos))
+	LOCAL_VAR(TSTRING, str, CALLF1(SELF __ReadString, file))
+	
+	IF(str == T("[]"))
+		RETURN_VAL(emptyChunk)
+	END_IF
+	
+	IF(SUBSTR(str, 0, 1) != T("[") OR SUBSTR(str, STRLEN(str) - 1, STRLEN(str)) != T("]"))
+		RETURN_VAL(emptyChunk)
+	END_IF
+	ASSIGN(str, SUBSTR(str, 1, STRLEN(str) - 1))
+	
+	LOCAL_VAR(TINT, posSpace, STRFIND(str, T(" ")))
+	IF(posSpace == NOT_FOUND OR posSpace == 0)
+		RETURN_VAL(emptyChunk)
+	END_IF
+	CALLP1(chunk.SetChunkName, SUBSTR(str, 0, posSpace))
+	ASSIGN(str, SUBSTR(str, posSpace + 1, STRLEN(str)))
+	
+	ASSIGN(posSpace, STRFIND(str, T(" ")))
+	IF(posSpace == NOT_FOUND OR posSpace == 0)
+		RETURN_VAL(emptyChunk)
+	END_IF
+	CALLP1(chunk.SetClassName, SUBSTR(str, 0, posSpace))
+	ASSIGN(str, SUBSTR(str, posSpace + 1, STRLEN(str)))
+	
+	ASSIGN(posSpace, STRFIND(str, T(" ")))
+	IF(posSpace == NOT_FOUND OR posSpace == 0)
+		RETURN_VAL(emptyChunk)
+	END_IF
+	CALLP1(chunk.SetClassVersion, STRING_TO_INT(SUBSTR(str, 0, posSpace)))
+	ASSIGN(str, SUBSTR(str, posSpace + 1, STRLEN(str)))
+	
+	CALLP1(chunk.SetObjectIndex, STRING_TO_INT(SUBSTR(str, 0, posSpace)))
+	RETURN_VAL(chunk)
+END_MEMBER_FUNC
+
+MEMBER_FUNC_1(TZENChunk, __ReadChunkStart_Binary, TFile, file)
+	LOCAL_VAR(TZENChunk, chunk, CALLF0(NewZENChunk))
+	CALLP1(chunk.SetPos, CALLF0(file.GetPos))
+	CALLP1(chunk.SetSize, CALLF0(file.ReadUnsignedLong))
+	CALLP1(chunk.SetClassVersion, CALLF0(file.ReadUnsignedShort))
+	CALLP1(chunk.SetObjectIndex, CALLF0(file.ReadUnsignedLong))
+	CALLP1(chunk.SetChunkName, CALLF0(file.ReadString))
+	CALLP1(chunk.SetClassName, CALLF0(file.ReadString))
+	RETURN_VAL(chunk)
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(__ReadChunkEnd_Binary, TFile, file, REF(TZENChunk), chunk)
+	CALLP1(file.SetPos, CALLF0(chunk.GetPos) + CALLF0(chunk.GetSize))
+END_MEMBER_PROC
+
+// Public section
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __zenVersion, 0)
+	ASSIGN(SELF __zenMode, ZENMODE_BINARY)
+	ASSIGN(SELF __saveGame, FALSE)
+	ASSIGN(SELF __numObjects, 0)
+END_MEMBER_PROC
+
+MEMBER_PROC_1(ReadHeader, TFile, file)
+	CALLP1(SELF __ReadCommonHeader, file)
+	IF(SELF __zenMode == ZENMODE_BIN_SAFE)
+		CALLP1(SELF __ReadHeader_BinSafe, file)
+	ELSE
+		CALLP1(SELF __ReadHeader_ASCII_Binary, file)
+	END_IF
+END_MEMBER_PROC
+
+MEMBER_FUNC_1(TSTRING, ReadString, TFile, file)
+	RETURN_VAL(CALLF1(SELF __ReadString, file))
+END_MEMBER_FUNC
+
+MEMBER_FUNC_1(TZENChunk, ReadChunkStart, TFile, file)
+	IF(SELF __zenMode == ZENMODE_BINARY)
+		RETURN_VAL(CALLF1(SELF __ReadChunkStart_Binary, file))
+	ELSE
+		RETURN_VAL(CALLF1(SELF __ReadChunkStart_ASCII_BinSafe, file))
+	END_IF
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(ReadChunkEnd, TFile, file, REF(TZENChunk), chunk)
+	IF(SELF __zenMode == ZENMODE_BINARY)
+		CALLP2(SELF __ReadChunkEnd_Binary, file, chunk)
+	END_IF
+	// ReadChunkEnd not implemented for ASCII and BinSafe archives because not used
+END_MEMBER_PROC
+
+END_CLASS // TZENArchive
+
+// Create an object of the "TZENArchive" class
+GLOBAL_FUNC_0(TZENArchive, NewZENArchive)
+	LOCAL_VAR(TZENArchive, zarc, NEW_VAL(TZENArchive))
+	CALLP0(zarc.Init)
+	RETURN_VAL(zarc)
+END_GLOBAL_FUNC
+
+#endif // ZEN_ARCHIVE_META
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

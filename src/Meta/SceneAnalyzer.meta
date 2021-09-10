@@ -1,0 +1,591 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        SceneAnalyzer.meta
+// Purpose:     Definition of TSceneAnalyzer class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef SCENE_ANALYZER_META
+#define SCENE_ANALYZER_META
+
+#include "Meta.h"
+#include "NameAnalyzer.meta"
+#include "ModelHierarchy.meta"
+#include "ObjectDesc.meta"
+
+CLASS(TSceneAnalyzer)
+
+// Private section:
+MEMBER_VAR(TARRAY(TSTRING), __sceneObjects)
+MEMBER_VAR(TARRAY(TSTRING), __selectedObjects)
+MEMBER_VAR(TARRAY(TSTRING), __sceneMeshesByType)
+MEMBER_VAR(TARRAY(TSTRING), __selectedMeshesByType)
+MEMBER_VAR(TARRAY(TSTRING), __sceneSlots)
+MEMBER_VAR(TARRAY(TSTRING), __selectedSlots)
+MEMBER_VAR(TARRAY(TSTRING), __sceneBones)
+MEMBER_VAR(TARRAY(TSTRING), __selectedBones)
+MEMBER_VAR(TARRAY(TSTRING), __sceneMeshes)
+MEMBER_VAR(TARRAY(TSTRING), __selectedMeshes)
+MEMBER_VAR(TARRAY(TSTRING), __sceneDummies)
+MEMBER_VAR(TARRAY(TSTRING), __selectedDummies)
+MEMBER_VAR(TARRAY(TSTRING), __scenePrefixes)
+MEMBER_VAR(TARRAY(TSTRING), __selectedPrefixes)
+MEMBER_VAR(TSTRING,         __uniquePrefix)
+MEMBER_VAR(TARRAY(TSTRING), __objectsByPrefix)
+MEMBER_VAR(TARRAY(TModelHierarchy), __modelHierarchies)
+MEMBER_VAR(TARRAY(TSTRING), __appropriatePrefixes)
+MEMBER_VAR(TARRAY(TSTRING), __selectedAppropriatePrefixes)
+
+// Append prefix to list of prefixes if it is not in the list yet
+MEMBER_PROC_2(__AppendPrefix, TSTRING, prefix, TBOOL, sel)
+	LOCAL_VAR(TBOOL, found, FALSE)
+	FOR(i, 0, SIZE(SELF __scenePrefixes))
+		IF(STRICMP(GET_ELEM(SELF __scenePrefixes, i), prefix) == 0)
+			ASSIGN(found, TRUE)
+		END_IF
+	END_FOR
+	IF(NOT(found))
+		APPEND(SELF __scenePrefixes, prefix)
+	END_IF
+	IF(sel)
+		ASSIGN(found, FALSE)
+		FOR(i, 0, SIZE(SELF __selectedPrefixes))
+			IF(STRICMP(GET_ELEM(SELF __selectedPrefixes, i), prefix) == 0)
+				ASSIGN(found, TRUE)
+			END_IF
+		END_FOR
+		IF(NOT(found))
+			APPEND(SELF __selectedPrefixes, prefix)
+		END_IF
+	END_IF
+END_MEMBER_PROC
+
+// Recursively analyzes scene objects' names and adds them to arrays in member variables of this class
+MEMBER_PROC_1(__PrepareSceneObjects, TOBJECT, obj)
+	IF(obj != ROOT_OBJECT)
+		LOCAL_VAR(TSTRING, objName, GET_OBJECT_NAME(obj))
+		LOCAL_VAR(TBOOL, selected, IS_SELECTED(obj))
+		LOCAL_VAR(TBOOL, isMeshByType, IS_MESH_OBJECT(obj))
+		LOCAL_VAR(TNameAnalyzer, na, CALLF1(AnalyzeName, objName))
+		APPEND(SELF __sceneObjects, objName)
+		IF(selected)
+			APPEND(SELF __selectedObjects, objName)
+		END_IF
+		IF(isMeshByType)
+			APPEND(SELF __sceneMeshesByType, objName)
+			IF(selected)
+				APPEND(SELF __selectedMeshesByType, objName)
+			END_IF
+		END_IF
+		LOCAL_VAR(TSTRING, prefix, CALLF0(na.GetPrefix))
+		LOCAL_VAR(TINT, objType, CALLF0(na.GetObjectType))
+		IF(objType == OBJTYPE_SLOT)
+			APPEND(SELF __sceneSlots, objName)
+			IF(selected)
+				APPEND(SELF __selectedSlots, objName)
+			END_IF
+			CALLP2(SELF __AppendPrefix, prefix, selected)
+		ELSE_IF(objType == OBJTYPE_BONE)
+			APPEND(SELF __sceneBones, objName)
+			IF(selected)
+				APPEND(SELF __selectedBones, objName)
+			END_IF
+			CALLP2(SELF __AppendPrefix, prefix, selected)
+		ELSE_IF(objType == OBJTYPE_MESH)
+			APPEND(SELF __sceneMeshes, objName)
+			IF(selected)
+				APPEND(SELF __selectedMeshes, objName)
+			END_IF
+			CALLP2(SELF __AppendPrefix, prefix, selected)
+		ELSE
+			APPEND(SELF __sceneDummies, objName)
+			IF(selected)
+				APPEND(SELF __selectedDummies, objName)
+			END_IF
+		END_IF
+	END_IF
+	LOCAL_VAR(TARRAY(TOBJECT), children, GET_CHILDREN(obj))
+	FOR(i, 0, SIZE(children))
+		CALLP1(SELF __PrepareSceneObjects, GET_ELEM(children, i))
+	END_FOR	
+END_MEMBER_PROC
+
+// Get array of objects by a model prefix specified
+MEMBER_FUNC_1(REF(TARRAY(TSTRING)), __GetObjectsByPrefix, TSTRING, prefix)
+	ASSIGN(SELF __objectsByPrefix, EMPTY_ARRAY(TSTRING))
+
+	LOCAL_VAR(TARRAY(TSTRING), conflictPrefixes, EMPTY_ARRAY(TSTRING))
+	FOR(i, 0, SIZE(SELF __scenePrefixes))
+		LOCAL_VAR(TSTRING, a, GET_ELEM(SELF __scenePrefixes, i))
+		IF((a != prefix) AND (SUBSTR(a, 0, STRLEN(prefix)) == prefix))
+			APPEND(conflictPrefixes, a)
+		END_IF
+	END_FOR
+
+	FOR(i, 0, SIZE(SELF __sceneObjects))
+		LOCAL_VAR(TSTRING, objName, GET_ELEM(SELF __sceneObjects, i))
+		IF(SUBSTR(objName, 0, STRLEN(prefix)) == prefix)
+			LOCAL_VAR(TBOOL, noConflicts, TRUE)
+			FOR(j, 0, SIZE(conflictPrefixes))
+				LOCAL_VAR(TSTRING, c, GET_ELEM(conflictPrefixes, j))
+				IF(SUBSTR(objName, 0, STRLEN(c)) == c)
+					ASSIGN(noConflicts, FALSE)
+					BREAK
+				END_IF
+			END_FOR
+			IF(noConflicts)
+				APPEND(SELF __objectsByPrefix, objName)
+			END_IF
+		END_IF
+	END_FOR		
+	RETURN_VAL(SELF __objectsByPrefix)
+END_MEMBER_FUNC
+
+// Prepares array of model hierarchies and stores it in member variable
+MEMBER_PROC_0(__PrepareModelHierarchies)
+	ASSIGN(SELF __modelHierarchies, EMPTY_ARRAY(TModelHierarchy))
+	
+	// for each prefix in the scene
+	FOR(i, 0, SIZE(SELF __scenePrefixes))
+		LOCAL_VAR(TSTRING, prefix, GET_ELEM(SELF __scenePrefixes, i))
+		LOCAL_VAR(REF(TARRAY(TSTRING)), objectsByPrefix, CALLF1(SELF __GetObjectsByPrefix, prefix))
+		
+		// calculate number of bones, slots, and meshes; enumerate objects
+		LOCAL_VAR(TINT, numBones, 0)
+		LOCAL_VAR(TINT, numSlots, 0)
+		LOCAL_VAR(TINT, numMeshes, 0)
+		LOCAL_VAR(TBOOL, bip01Found, FALSE)
+		LOCAL_VAR(TARRAY(TSTRING), objects, objectsByPrefix)
+		LOCAL_VAR(TARRAY(TINT), objectTypes, EMPTY_ARRAY(TINT))
+		FOR(j, 0, SIZE(objects))
+			LOCAL_VAR(TSTRING, objName, GET_ELEM(objects, j))
+			LOCAL_VAR(TNameAnalyzer, na, CALLF1(AnalyzeName, objName))
+			LOCAL_VAR(TINT, objType, CALLF0(na.GetObjectType))
+			IF(objType == OBJTYPE_BONE)
+				ASSIGN(numBones, numBones + 1)
+				IF(STRICMP(CALLF0(na.GetShortName), T("Bip01")) == 0)
+					ASSIGN(bip01Found, TRUE)
+				END_IF
+			ELSE_IF(objType == OBJTYPE_SLOT)
+				ASSIGN(numSlots, numSlots + 1)
+			ELSE_IF(objType == OBJTYPE_MESH)
+				ASSIGN(numMeshes, numMeshes + 1)
+			END_IF
+			SET_ELEM(objects, j, SUBSTR(objName, STRLEN(prefix), STRLEN(objName)))
+			APPEND(objectTypes, objType)
+		END_FOR
+		
+		// calculate type of model (static/dynamic/morph mesh)
+		LOCAL_VAR(TINT, modelType, MODELTYPE_UNKNOWN)
+		IF(numMeshes == 1 AND numBones == 0 AND numSlots == 0)
+			ASSIGN(modelType, MODELTYPE_MORPH)
+		ELSE_IF(bip01Found)
+			ASSIGN(modelType, MODELTYPE_DYNAMIC)
+		ELSE
+			ASSIGN(modelType, MODELTYPE_STATIC)
+		END_IF
+
+		// make root bone first and remove leading dummies (if this is a dynamic model)
+		IF(modelType == MODELTYPE_DYNAMIC)
+			LOCAL_VAR(TINT, rootBoneIndex, -1)
+			FOR(i, 0, SIZE(objects))
+				LOCAL_VAR(TSTRING, objName, GET_ELEM(objects, i))
+				LOCAL_VAR(TINT, objType, GET_ELEM(objectTypes, i))
+				IF(objType == OBJTYPE_BONE)
+					ASSIGN(rootBoneIndex, i)
+					BREAK
+				END_IF
+			END_FOR
+			IF(rootBoneIndex != -1 AND rootBoneIndex != 0)
+				LOCAL_VAR(TSTRING, tmp, GET_ELEM(objects, 0))
+				SET_ELEM(objects, 0, GET_ELEM(objects, rootBoneIndex))
+				SET_ELEM(objects, rootBoneIndex, tmp)
+				LOCAL_VAR(TINT, tmp2, GET_ELEM(objectTypes, 0))
+				SET_ELEM(objectTypes, 0, GET_ELEM(objectTypes, rootBoneIndex))
+				SET_ELEM(objectTypes, rootBoneIndex, tmp2)
+			END_IF
+			LOCAL_VAR(TARRAY(TSTRING), withoutLeadDummies, EMPTY_ARRAY(TSTRING))
+			LOCAL_VAR(TARRAY(TINT), withoutLeadDummies2, EMPTY_ARRAY(TINT))
+			FOR(i, 0, SIZE(objects))
+				LOCAL_VAR(TSTRING, objName, GET_ELEM(objects, i))
+				LOCAL_VAR(TINT, objType, GET_ELEM(objectTypes, i))
+				IF((objType != OBJTYPE_DUMMY) OR (i > rootBoneIndex))
+					APPEND(withoutLeadDummies, objName)
+					APPEND(withoutLeadDummies2, objType)
+				END_IF
+			END_FOR
+			ASSIGN(objects, withoutLeadDummies)
+			ASSIGN(objectTypes, withoutLeadDummies2)
+		END_IF
+		
+		// retrieve parent of each object
+		LOCAL_VAR(TARRAY(TSTRING), objectParents, EMPTY_ARRAY(TSTRING))
+		FOR(j, 0, SIZE(objects))
+			LOCAL_VAR(TSTRING, defaultParentName, EMPTY_STRING)
+			IF((modelType == MODELTYPE_DYNAMIC) AND (j > 0))
+				ASSIGN(defaultParentName, GET_ELEM(objects, 0))
+			END_IF
+			LOCAL_VAR(TSTRING, objName, GET_ELEM(objects, j))
+			LOCAL_VAR(TOBJECT, obj, FIND_OBJECT_BY_NAME(prefix + objName))
+			LOCAL_VAR(TSTRING, parentName, defaultParentName)
+			IF(obj != INVALID_OBJECT)
+				LOCAL_VAR(TOBJECT, parent, GET_PARENT(obj))
+				IF(parent != ROOT_OBJECT)
+					LOCAL_VAR(TSTRING, tmp, GET_OBJECT_NAME(parent))
+					FOR(k, 0, j)
+						IF(tmp == prefix + GET_ELEM(objects, k))
+							ASSIGN(parentName, GET_ELEM(objects, k))
+							BREAK
+						END_IF
+					END_FOR
+				END_IF
+			END_IF
+			APPEND(objectParents, parentName)
+		END_FOR
+		
+		// append new model hierarchy to list
+		LOCAL_VAR(TModelHierarchy, mh, CALLF0(NewModelHierarchy))
+		CALLP1(mh.SetModelPrefix, prefix)
+		CALLP1(mh.SetModelType, modelType)
+		CALLP1(mh.SetObjects, objects)
+		CALLP1(mh.SetObjectParents, objectParents)
+		CALLP1(mh.SetObjectTypes, objectTypes)
+		APPEND(SELF __modelHierarchies, mh)
+	END_FOR
+END_MEMBER_PROC
+
+// Get model hierachy by specified prefix
+MEMBER_FUNC_1(REF(TModelHierarchy), __GetModelHierarchyByPrefix, TSTRING, prefix)
+	FOR(i, 0, SIZE(SELF __modelHierarchies))
+		LOCAL_VAR(REF(TModelHierarchy), mh, GET_ELEM(SELF __modelHierarchies, i))
+		IF(CALLF0(mh.GetModelPrefix) == prefix)
+			RETURN_VAL(mh)
+		END_IF
+	END_FOR
+	// the following will generate an error if model hierarchy will not be not found
+	RETURN_VAL(GET_ELEM(SELF __modelHierarchies, -1))
+END_MEMBER_PROC
+
+// Check prefix for unique
+MEMBER_FUNC_1(TBOOL, __CheckPrefixForUnique, TSTRING, prefix)
+	FOR(i, 0, SIZE(SELF __scenePrefixes))
+		IF(GET_ELEM(SELF __scenePrefixes, i) == prefix)
+			RETURN_VAL(FALSE)
+		END_IF
+	END_FOR
+	RETURN_VAL(TRUE)
+END_MEMBER_FUNC
+
+// The following function generates an unique prefix which is not used in scene yet
+// It tries prefixes: "", "A ", "B ", "C ", ..., "Z ", "AA ", "AB ", "AC ", ..., "AZ ",
+// "BA ", "BB ", "BC ", ... "BZ ", ..., "ZA", "ZB", "ZC", ..., "ZZ", "AAA ", "AAB ", "AAC ", ...
+MEMBER_PROC_0(__PrepareUniquePrefix)
+	LOCAL_VAR(TSTRING, prefix, EMPTY_STRING)
+	LOCAL_VAR(TINT, a, CHAR_AS_INT(T("A")))
+	LOCAL_VAR(TINT, z, CHAR_AS_INT(T("Z")))
+	LOCAL_VAR(TARRAY(TINT), codes, EMPTY_ARRAY(TINT))
+	
+	WHILE(NOT(CALLF1(SELF __CheckPrefixForUnique, prefix)))
+		// generate codes for the next prefix
+		LOCAL_VAR(TINT, pos, SIZE(codes) - 1)
+		WHILE(TRUE)
+			IF(pos == -1)
+				// Examples: "" -> "A", "Z" -> "AA", "ZZZ" -> "AAAA"
+				FOR(i, 0, SIZE(codes))
+					SET_ELEM(codes, i, a)
+				END_FOR
+				APPEND(codes, a)
+				BREAK
+			ELSE_IF(GET_ELEM(codes, pos) < z)
+				// Examples: "A" -> "B", "C"->"D", "ABA"->"ABB", "ABB"->"ABC", "ABC"->ABD"
+				SET_ELEM(codes, pos, GET_ELEM(codes, pos) + 1)
+				BREAK
+			ELSE
+				// Continue with the previous code
+				SET_ELEM(codes, pos, a)
+				ASSIGN(pos, pos - 1)
+			END_IF
+		END_WHILE
+			
+		// generate the next prefix from ascii codes
+		ASSIGN(prefix, EMPTY_STRING)
+		FOR(i, 0, SIZE(codes))
+			ASSIGN(prefix, prefix + INT_AS_CHAR(GET_ELEM(codes, i)))
+		END_FOR
+		IF(STRLEN(prefix) != 0)
+			ASSIGN(prefix, prefix + T(" "))
+		END_IF
+	END_WHILE
+	ASSIGN(SELF __uniquePrefix, prefix)
+END_MEMBER_PROC
+
+// Initialize
+MEMBER_PROC_0(__Init)
+	ASSIGN(SELF __sceneObjects,         EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedObjects,      EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __sceneMeshesByType,    EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedMeshesByType, EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __sceneSlots,           EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedSlots,        EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __sceneBones,           EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedBones,        EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __sceneMeshes,          EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedMeshes,       EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __sceneDummies,         EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedDummies,      EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __scenePrefixes,        EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedPrefixes,     EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __uniquePrefix,         EMPTY_STRING)
+	ASSIGN(SELF __objectsByPrefix,      EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __modelHierarchies,     EMPTY_ARRAY(TModelHierarchy))
+	ASSIGN(SELF __appropriatePrefixes,  EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedAppropriatePrefixes, EMPTY_ARRAY(TSTRING))
+END_MEMBER_PROC
+
+// Analyze scene
+MEMBER_PROC_0(__Analyze)
+	SHOW_PROGRESS_BAR(T("Analyzing scene"), 1)
+	CALLP0(SELF __Init)
+	CALLP1(SELF __PrepareSceneObjects, ROOT_OBJECT)
+	CALLP0(SELF __PrepareModelHierarchies)
+	CALLP0(SELF __PrepareUniquePrefix)
+END_MEMBER_PROC
+
+// Find dynamic models which can be used with data loaded from asc file to apply skin or animation
+MEMBER_PROC_1(__FindAppropriateDynamicModels, TARRAY(TObjectDesc), objectsDesc)
+	ASSIGN(SELF __appropriatePrefixes, EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedAppropriatePrefixes, EMPTY_ARRAY(TSTRING))
+	FOR(i, 0, SIZE(SELF __scenePrefixes))
+		LOCAL_VAR(REF(TSTRING), prefix, GET_ELEM(SELF __scenePrefixes, i))
+		LOCAL_VAR(TBOOL, appropriate, TRUE)
+
+		FOR(j, 0, SIZE(objectsDesc))
+			LOCAL_VAR(REF(TSTRING), objName, CALLF0(GET_ELEM(objectsDesc, j).GetObjectName))
+			LOCAL_VAR(TNameAnalyzer, na, CALLF1(AnalyzeName, objName))
+			LOCAL_VAR(TINT, objType, na.GetObjectType())
+			IF((objType == OBJTYPE_BONE) OR (objType == OBJTYPE_SLOT))
+				LOCAL_VAR(TBOOL, matchFound, FALSE)
+				IF(objType == OBJTYPE_BONE)
+					FOR(k, 0, SIZE(SELF __sceneBones))
+						IF(STRICMP(GET_ELEM(SELF __sceneBones, k), prefix + objName) == 0)
+							ASSIGN(matchFound, TRUE)
+							BREAK
+						END_IF
+					END_FOR
+				ELSE
+					FOR(k, 0, SIZE(SELF __sceneSlots))
+						IF(STRICMP(GET_ELEM(SELF __sceneSlots, k), prefix + objName) == 0)
+							ASSIGN(matchFound, TRUE)
+							BREAK
+						END_IF
+					END_FOR
+				END_IF
+				IF(NOT(matchFound))
+					ASSIGN(appropriate, FALSE)
+					BREAK
+				END_IF
+			END_IF
+		END_FOR
+		
+		IF(appropriate)
+			APPEND(SELF __appropriatePrefixes, prefix)
+			FOR(j, 0, SIZE(SELF __selectedPrefixes))
+				IF(GET_ELEM(SELF __selectedPrefixes, j) == prefix)
+					APPEND(SELF __selectedAppropriatePrefixes, prefix)
+					BREAK
+				END_IF
+			END_FOR			
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Find morph meshes which can be used with data loaded from asc file to apply morph animation
+MEMBER_PROC_1(__FindAppropriateMorphMeshes, TARRAY(TObjectDesc), objectsDesc)
+	ASSIGN(SELF __appropriatePrefixes, EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedAppropriatePrefixes, EMPTY_ARRAY(TSTRING))
+	FOR(i, 0, SIZE(SELF __scenePrefixes))
+		LOCAL_VAR(REF(TSTRING), prefix, GET_ELEM(SELF __scenePrefixes, i))
+		LOCAL_VAR(TBOOL, appropriate, TRUE)
+
+		FOR(j, 0, SIZE(objectsDesc))
+			LOCAL_VAR(REF(TSTRING), objName, CALLF0(GET_ELEM(objectsDesc, j).GetObjectName))
+			LOCAL_VAR(TNameAnalyzer, na, CALLF1(AnalyzeName, objName))
+			LOCAL_VAR(TINT, objType, na.GetObjectType())
+			IF(objType == OBJTYPE_MESH)
+				LOCAL_VAR(TBOOL, matchFound, FALSE)
+				FOR(k, 0, SIZE(SELF __sceneMeshes))
+					IF(GET_ELEM(SELF __sceneMeshes, k) == prefix + objName)
+						LOCAL_VAR(TOBJECT, obj, FIND_OBJECT_BY_NAME(prefix + objName))
+						IF(IS_MESH_OBJECT(obj))
+							LOCAL_VAR(TMESH, msh, GET_MESH(obj))
+							LOCAL_VAR(TINT, numVerts1, GET_NUM_VERTS(msh))
+							LOCAL_VAR(REF(TMorphTrack), morphTrack, CALLF0(GET_ELEM(objectsDesc, j).GetMorphTrack))
+							IF(CALLF0(morphTrack.GetNumSamples) > 0)
+								LOCAL_VAR(TINT, numVerts2, SIZE(CALLF1(morphTrack.GetSampleVerts, 0)))
+								IF(numVerts1 == numVerts2)
+									ASSIGN(matchFound, TRUE)
+									BREAK
+								END_IF
+							END_IF
+						END_IF
+					END_IF
+				END_FOR
+				
+				IF(NOT(matchFound))
+					ASSIGN(appropriate, FALSE)
+					BREAK
+				END_IF
+			END_IF
+		END_FOR
+	
+		IF(appropriate)
+			APPEND(SELF __appropriatePrefixes, prefix)
+			FOR(j, 0, SIZE(SELF __selectedPrefixes))
+				IF(GET_ELEM(SELF __selectedPrefixes, j) == prefix)
+					APPEND(SELF __selectedAppropriatePrefixes, prefix)
+					BREAK
+				END_IF
+			END_FOR			
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+
+// Public section:
+// Initialize
+MEMBER_PROC_0(Init)
+	CALLP0(SELF __Init)
+END_MEMBER_PROC
+
+// Analyze scene
+MEMBER_PROC_0(Analyze)
+	CALLP0(SELF __Analyze)
+END_MEMBER_PROC
+
+// Returns names of all objects in the scene
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSceneObjects)
+	RETURN_VAL(SELF __sceneObjects)
+END_MEMBER_FUNC
+
+// Returns names of all selected objects in the scene
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSelectedObjects)
+	RETURN_VAL(SELF __selectedObjects)
+END_MEMBER_FUNC
+
+// Returns names of all objects in the scene 
+// which are meshes or can be converted to meshes
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSceneMeshesByType)
+	RETURN_VAL(SELF __sceneMeshesByType)
+END_MEMBER_FUNC
+
+// Returns names of all selected objects in the scene 
+// which are meshes or can be converted to meshes
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSelectedMeshesByType)
+	RETURN_VAL(SELF __selectedMeshesByType)
+END_MEMBER_FUNC
+
+// Returns names of all slots (...ZS_...) in the scene
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSceneSlots)
+	RETURN_VAL(SELF __sceneSlots)
+END_MEMBER_FUNC
+
+// Returns names of all selected slots (...ZS_...) in the scene
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSelectedSlots)
+	RETURN_VAL(SELF __selectedSlots)
+END_MEMBER_FUNC
+
+// Returns names of all bones (...Bip01...) in the scene
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSceneBones)
+	RETURN_VAL(SELF __sceneBones)
+END_MEMBER_FUNC
+
+// Returns names of all selected bones (...Bip01...) in the scene
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSelectedBones)
+	RETURN_VAL(SELF __selectedBones)
+END_MEMBER_FUNC
+
+// Returns names of all meshes (...ZM_...) in the scene
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSceneMeshes)
+	RETURN_VAL(SELF __sceneMeshes)
+END_MEMBER_FUNC
+
+// Returns names of all selected meshes (...ZM_...) in the scene
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSelectedMeshes)
+	RETURN_VAL(SELF __selectedMeshes)
+END_MEMBER_FUNC
+
+// Returns names of all dummies (a dummy is not a slot, not a bone, and not a mesh) in the scene
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSceneDummies)
+	RETURN_VAL(SELF __sceneDummies)
+END_MEMBER_FUNC
+
+// Returns names of all selected meshes in the scene
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSelectedDummies)
+	RETURN_VAL(SELF __selectedDummies)
+END_MEMBER_FUNC
+
+// Returns all prefixes (prefix is a string before Bip01, ZM_, or ZS_ in object's name)
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetScenePrefixes)
+	RETURN_VAL(SELF __scenePrefixes)
+END_MEMBER_FUNC
+
+// Returns all selected prefixes
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSelectedPrefixes)
+	RETURN_VAL(SELF __selectedPrefixes)
+END_MEMBER_FUNC
+
+// Returns an unique prefix
+// (unique prefix is a prefix which is not used in scene yet)
+MEMBER_FUNC_0(REF(TSTRING), GetUniquePrefix)
+	RETURN_VAL(SELF __uniquePrefix)
+END_MEMBER_FUNC
+
+// Returns model hierarchies of all models in the scene
+MEMBER_FUNC_0(REF(TARRAY(TModelHierarchy)), GetModelHierarchies)
+	RETURN_VAL(SELF __modelHierarchies)
+END_MEMBER_FUNC
+
+// Returns model hierarchy by specified prefix
+MEMBER_FUNC_1(REF(TModelHierarchy), GetModelHierarchyByPrefix, TSTRING, prefix)
+	RETURN_VAL(CALLF1(SELF __GetModelHierarchyByPrefix, prefix))
+END_MEMBER_FUNC
+
+// Find dynamic models which can be used with data loaded from asc file to apply skin or animation
+MEMBER_PROC_1(FindAppropriateDynamicModels, TARRAY(TObjectDesc), objectsDesc)
+	CALLP1(SELF __FindAppropriateDynamicModels, objectsDesc)
+END_MEMBER_PROC
+
+// Find morph meshes which can be used with data loaded from asc file to apply morph animation
+MEMBER_PROC_1(FindAppropriateMorphMeshes, TARRAY(TObjectDesc), objectsDesc)
+	CALLP1(SELF __FindAppropriateMorphMeshes, objectsDesc)
+END_MEMBER_PROC
+
+// Get array of prefixes of appropriate models
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetAppropriatePrefixes)
+	RETURN_VAL(SELF __appropriatePrefixes)
+END_MEMBER_FUNC
+
+// Get array of prefixes of selected appropriate models
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSelectedAppropriatePrefixes)
+	RETURN_VAL(SELF __selectedAppropriatePrefixes)
+END_MEMBER_FUNC
+
+END_CLASS // TSceneAnalyzer
+
+
+// Global functions to create an instance of class TSceneAnalyzer
+GLOBAL_FUNC_0(TSceneAnalyzer, NewSceneAnalyzer)
+	LOCAL_VAR(TSceneAnalyzer, sa, NEW_VAL(TSceneAnalyzer))
+	CALLP0(sa.Init)
+	RETURN_VAL(sa)
+END_GLOBAL_FUNC
+
+GLOBAL_FUNC_0(TSceneAnalyzer, AnalyzeScene)
+	LOCAL_VAR(TSceneAnalyzer, sa, CALLF0(NewSceneAnalyzer))
+	CALLP0(sa.Analyze)
+	RETURN_VAL(sa)
+END_GLOBAL_FUNC
+
+#endif // SCENE_ANALYZER_META

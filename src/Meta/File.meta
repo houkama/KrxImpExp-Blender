@@ -1,0 +1,365 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        File.meta
+// Purpose:     Definition of TFile class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef FILE_META
+#define FILE_META
+
+// Error messages
+#define ErrFileNotCreated	_T("Could not open file for write.\nFile path: \"%1\".")
+#define ErrFileNotFound		_T("Could not open file for read.\nFile path: \"%1\".")
+#define ErrSeekOutOfFile	_T("Attempt to seek file pointer out of file.\nFile path: \"%1\".\nPosition of file pointer: %2.\nAllowable range: %3..%4.")
+#define ErrWriteFailed		_T("Could not write data to file.\nFile path: \"%1\".\nSize of data: %2.")
+#define ErrIntOutOfRange	_T("Could not write an integer to file.\nAn integer is out of range.\nFile path: \"%1\".\nInteger: %2.\nAllowable range: %3..%4.")
+#define ErrReadFailed		_T("Could not read data from file.\nFile path: \"%1\".\nPosition in file: %2.\nSize of data: %3.")
+#define ErrStringTooLong	_T("Could not read a null-terminated string from file.\nThe string seems to be too long.\nFile path: \"%1\".\nPosition in file: %2.")
+#define ErrLineTooLong		_T("Could not read a CR+LF ended line from file.\nThe line seems to be too long.\nFile path: \"%1\".\nPosition in file: %2.")
+
+#include "FormatMsg.meta"
+
+// Special class for operations on opened file
+CLASS(TFile)
+
+// Private section:
+MEMBER_VAR(TSTREAM,	__stream)
+MEMBER_VAR(TSTRING,	__name)
+MEMBER_VAR(TSTRING,	__mode)
+MEMBER_VAR(TINT,    __size)
+MEMBER_VAR(TINT,    __pos)
+
+MEMBER_PROC_1(__MoveFilePos, TINT, ofs)
+	ASSIGN(SELF __pos, SELF __pos + ofs)
+	IF(SELF __size < SELF __pos)
+		ASSIGN(SELF __size, SELF __pos)
+	END_IF
+END_MEMBER_PROC
+
+
+// Public section:
+// Initialize
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __stream, 	INVALID_STREAM)
+	ASSIGN(SELF __name, 	EMPTY_STRING)
+	ASSIGN(SELF __mode, 	EMPTY_STRING)
+	ASSIGN(SELF __size,  	0)
+	ASSIGN(SELF __pos, 		0)
+END_MEMBER_PROC
+
+// Opens a file for reading or writing base on the openMode parameter.
+// This can either be "wb" for writing binary file,
+// "rb" for reading binary file, "wt" for writing text file,
+// "rt" for reading text file.
+// This function throws exception if it cannot open file.
+MEMBER_PROC_2(Open, TSTRING, filename, TSTRING, mode)
+	IF(SELF __stream != INVALID_STREAM)
+		CALLP0(SELF Close)
+	END_IF
+	LOCAL_VAR(TINT, filesz, FILE_SIZE(filename))
+	ASSIGN(SELF __stream, OPEN_FILE(filename, mode))
+	IF(SELF __stream == INVALID_STREAM)
+		LOCAL_VAR(TBOOL, cr, STRFIND(mode, T("w")) != NOT_FOUND)
+		IF(cr)
+			THROW(CALLF2(FormatMsg1, ErrFileNotCreated, filename))
+		ELSE
+			THROW(CALLF2(FormatMsg1, ErrFileNotFound, filename))
+		END_IF
+	END_IF
+	ASSIGN(SELF __name, filename)
+	ASSIGN(SELF __mode, mode)
+	ASSIGN(SELF __size, filesz)
+	ASSIGN(SELF __pos, 0)
+END_MEMBER_PROC
+
+// Returns TRUE if the file is opened or FALSE elsewise.
+MEMBER_FUNC_0(TBOOL, IsOpened)
+	RETURN_VAL(SELF __stream != INVALID_STREAM)
+END_MEMBER_FUNC
+
+// Closes the file if it was opened
+MEMBER_PROC_0(Close)
+	IF(SELF __stream != INVALID_STREAM)
+		CLOSE_FILE(SELF __stream)
+		CALLP0(SELF Init)
+	END_IF
+END_MEMBER_PROC
+
+// Gets the file's name with full path.
+// This function required the file to be opened.
+MEMBER_FUNC_0(REF(TSTRING), GetName)
+	RETURN_VAL(SELF __name)
+END_MEMBER_FUNC
+
+// Gets the file's open mode.
+// This is the same mode as was specified when the file was opened.
+MEMBER_FUNC_0(TSTRING, GetMode)
+	RETURN_VAL(SELF __mode)
+END_MEMBER_FUNC
+
+// Get the file's size.
+// This function required the file to be opened.
+MEMBER_FUNC_0(TINT, GetSize)
+	RETURN_VAL(SELF __size)
+END_MEMBER_FUNC
+
+// Gets the position of the file pointer.
+// This function required the file to be opened.
+MEMBER_FUNC_0(TINT, GetPos)
+	RETURN_VAL(SELF __pos)
+END_MEMBER_FUNC
+
+// Moves the file pointer to a specified position.
+// This function throws exception if the specified position is after the file's end.
+MEMBER_PROC_1(SetPos, TINT, pos)
+	IF(pos != SELF __pos)
+		IF(pos < 0 OR pos > SELF __size)
+			THROW(CALLF5(FormatMsg4, ErrSeekOutOfFile, SELF __name, HEXFORM(pos), HEXFORM(0), HEXFORM(SELF __size)))
+		END_IF
+		FILE_SEEK(SELF __stream, pos)
+		ASSIGN(SELF __pos, pos)
+	END_IF
+END_MEMBER_PROC
+
+// Tests for end of file
+MEMBER_FUNC_0(TBOOL, Eof)
+	RETURN_VAL(SELF __pos == SELF __size)
+END_MEMBER_FUNC
+
+// Writes 1-byte signed integer to binary file.
+// This function throws exception if a error appears.
+MEMBER_PROC_1(WriteSignedChar, TINT, i)
+	IF(i < -128 OR i > 127)
+		THROW(CALLF5(FormatMsg4, ErrIntOutOfRange, SELF __name, INT_TO_STRING(i), T("-128"), T("127")))
+	END_IF
+	LOCAL_VAR(TBOOL, b, WRITE_SIGNED_CHAR(SELF __stream, i))
+	IF(NOT(b))
+		THROW(CALLF3(FormatMsg2, ErrWriteFailed, SELF __name, T("1")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 1)
+END_MEMBER_PROC
+
+// Writes 1-byte unsigned integer to binary file.
+// This function throws exception if a error appears.
+MEMBER_PROC_1(WriteUnsignedChar, TINT, i)
+	IF(i < 0 OR i > 255)
+		THROW(CALLF5(FormatMsg4, ErrIntOutOfRange, SELF __name, INT_TO_STRING(i), T("0"), T("255")))
+	END_IF
+	LOCAL_VAR(TBOOL, b, WRITE_UNSIGNED_CHAR(SELF __stream, i))
+	IF(NOT(b))
+		THROW(CALLF3(FormatMsg2, ErrWriteFailed, SELF __name, T("1")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 1)
+END_MEMBER_PROC
+
+// Writes 1-byte boolean to binary file.
+// This function throws exception if a error appears.
+MEMBER_PROC_1(WriteBool, TBOOL, b)
+	LOCAL_VAR(TINT, i, 0)
+	IF(b)
+		ASSIGN(i, 1)
+	END_IF
+	CALLP1(SELF WriteUnsignedChar, i)
+END_MEMBER_PROC
+
+// Writes 2-byte signed integer to binary file.
+// This function throws exception if a error appears.
+MEMBER_PROC_1(WriteSignedShort, TINT, i)
+	IF(i < -32768 OR i > 32767)
+		THROW(CALLF5(FormatMsg4, ErrIntOutOfRange, SELF __name, INT_TO_STRING(i), T("-32768"), T("32767")))
+	END_IF
+	LOCAL_VAR(TBOOL, b, WRITE_SIGNED_SHORT(SELF __stream, i))
+	IF(NOT(b))
+		THROW(CALLF3(FormatMsg2, ErrWriteFailed, SELF __name, T("2")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 2)
+END_MEMBER_PROC
+
+// Writes 2-byte unsigned integer to binary file.
+// This function throws exception if a error appears.
+MEMBER_PROC_1(WriteUnsignedShort, TINT, i)
+	IF(i < 0 OR i > 65535)
+		THROW(CALLF5(FormatMsg4, ErrIntOutOfRange, SELF __name, INT_TO_STRING(i), T("0"), T("65535")))
+	END_IF
+	LOCAL_VAR(TBOOL, b, WRITE_UNSIGNED_SHORT(SELF __stream, i))
+	IF(NOT(b))
+		THROW(CALLF3(FormatMsg2, ErrWriteFailed, SELF __name, T("2")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 2)
+END_MEMBER_PROC
+
+// Writes 4-byte signed integer to binary file.
+// This function throws exception if a error appears.
+MEMBER_PROC_1(WriteSignedLong, TINT, i)
+	LOCAL_VAR(TBOOL, b, WRITE_SIGNED_LONG(SELF __stream, i))
+	IF(NOT(b))
+		THROW(CALLF3(FormatMsg2, ErrWriteFailed, SELF __name, T("4")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 4)
+END_MEMBER_PROC
+
+// Writes 4-byte unsigned integer to binary file.
+// This function throws exception if a error appears.
+MEMBER_PROC_1(WriteUnsignedLong, TINT, i)
+	LOCAL_VAR(TBOOL, b, WRITE_UNSIGNED_LONG(SELF __stream, i))
+	IF(NOT(b))
+		THROW(CALLF3(FormatMsg2, ErrWriteFailed, SELF __name, T("4")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 4)
+END_MEMBER_PROC
+
+// Writes 4-byte floating point number to binary file.
+// This function throws exception if a error appears.
+MEMBER_PROC_1(WriteFloat, TFLOAT, f)
+	LOCAL_VAR(TBOOL, b, WRITE_FLOAT(SELF __stream, f))
+	IF(NOT(b))
+		THROW(CALLF3(FormatMsg2, ErrWriteFailed, SELF __name, T("4")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 4)
+END_MEMBER_PROC
+
+// Writes a null-terminated string to binary file.
+// The terminated zero is also written.
+// This function throws exception if a error appears.
+MEMBER_PROC_1(WriteString, TSTRING, str)
+	LOCAL_VAR(TBOOL, b, WRITE_STRING(SELF __stream, str))
+	LOCAL_VAR(TINT, sz, STRLEN(str) + 1)
+	IF(NOT(b))
+		THROW(CALLF3(FormatMsg2, ErrWriteFailed, SELF __name, INT_TO_STRING(sz)))
+	END_IF
+	CALLP1(SELF __MoveFilePos, sz)
+END_MEMBER_PROC
+
+// Writes a line to text file. CR+LF are also written.
+// This function throws exception if a error appears.
+MEMBER_PROC_1(WriteLine, TSTRING, str)
+	LOCAL_VAR(TBOOL, b, WRITE_LINE(SELF __stream, str))
+	LOCAL_VAR(TINT, sz, STRLEN(str) + 2)
+	IF(NOT(b))
+		THROW(CALLF3(FormatMsg2, ErrWriteFailed, SELF __name, INT_TO_STRING(sz)))
+	END_IF
+	CALLP1(SELF __MoveFilePos, sz)
+END_MEMBER_PROC
+
+// Reads 1-byte signed integer from binary file.
+// This function throws exception if a error appears.
+MEMBER_FUNC_0(TINT, ReadSignedChar)
+	LOCAL_VAR(TINT, i, READ_SIGNED_CHAR(SELF __stream))
+	IF(i == INVALID_INT)
+		THROW(CALLF4(FormatMsg3, ErrReadFailed, SELF __name, HEXFORM(SELF __pos), T("1")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 1)
+	RETURN_VAL(i)
+END_MEMBER_PROC
+
+// Reads 1-byte unsigned integer from binary file.
+// This function throws exception if a error appears.
+MEMBER_FUNC_0(TINT, ReadUnsignedChar)
+	LOCAL_VAR(TINT, i, READ_UNSIGNED_CHAR(SELF __stream))
+	IF(i == INVALID_INT)
+		THROW(CALLF4(FormatMsg3, ErrReadFailed, SELF __name, HEXFORM(SELF __pos), T("1")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 1)
+	RETURN_VAL(i)
+END_MEMBER_PROC
+
+// Reads 1-byte boolean from binary file.
+// This function throws exception if a error appears.
+MEMBER_FUNC_0(TBOOL, ReadBool)
+	LOCAL_VAR(TINT, i, CALLF0(SELF ReadUnsignedChar))
+	RETURN_VAL(i != 0)
+END_MEMBER_PROC
+
+// Reads 2-byte signed integer from binary file.
+// This function throws exception if a error appears.
+MEMBER_FUNC_0(TINT, ReadSignedShort)
+	LOCAL_VAR(TINT, i, READ_SIGNED_SHORT(SELF __stream))
+	IF(i == INVALID_INT)
+		THROW(CALLF4(FormatMsg3, ErrReadFailed, SELF __name, HEXFORM(SELF __pos), T("2")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 2)
+	RETURN_VAL(i)
+END_MEMBER_PROC
+
+// Reads 2-byte unsigned integer from binary file.
+// This function throws exception if a error appears.
+MEMBER_FUNC_0(TINT, ReadUnsignedShort)
+	LOCAL_VAR(TINT, i, READ_UNSIGNED_SHORT(SELF __stream))
+	IF(i == INVALID_INT)
+		THROW(CALLF4(FormatMsg3, ErrReadFailed, SELF __name, HEXFORM(SELF __pos), T("2")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 2)
+	RETURN_VAL(i)
+END_MEMBER_PROC
+
+// Reads 4-byte signed integer from binary file.
+// This function throws exception if a error appears.
+MEMBER_FUNC_0(TINT, ReadSignedLong)
+	LOCAL_VAR(TINT, i, READ_SIGNED_LONG(SELF __stream))
+	IF(i == INVALID_INT)
+		THROW(CALLF4(FormatMsg3, ErrReadFailed, SELF __name, HEXFORM(SELF __pos), T("4")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 4)
+	RETURN_VAL(i)
+END_MEMBER_PROC
+
+// Reads 4-byte unsigned integer from binary file.
+// This function throws exception if a error appears.
+MEMBER_FUNC_0(TINT, ReadUnsignedLong)
+	LOCAL_VAR(TINT, i, READ_UNSIGNED_LONG(SELF __stream))
+	IF(i == INVALID_INT)
+		THROW(CALLF4(FormatMsg3, ErrReadFailed, SELF __name, HEXFORM(SELF __pos), T("4")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 4)
+	RETURN_VAL(i)
+END_MEMBER_PROC
+
+// Reads 4-byte floating point number from binary file.
+// This function throws exception if a error appears.
+MEMBER_FUNC_0(TFLOAT, ReadFloat)
+	LOCAL_VAR(TFLOAT, f, READ_FLOAT(SELF __stream))
+	IF(f == INVALID_FLOAT)
+		THROW(CALLF4(FormatMsg3, ErrReadFailed, SELF __name, HEXFORM(SELF __pos), T("4")))
+	END_IF
+	CALLP1(SELF __MoveFilePos, 4)
+	RETURN_VAL(f)
+END_MEMBER_PROC
+
+// Reads a null-terminated string from binary file.
+// The terminating null is read, but it is not appended to a value returned.
+// This function throws exception if a error appears.
+MEMBER_FUNC_0(TSTRING, ReadString)
+	LOCAL_VAR(TSTRING, str, READ_STRING(SELF __stream))
+	IF(str == INVALID_STRING)
+		THROW(CALLF3(FormatMsg2, ErrStringTooLong, SELF __name, HEXFORM(SELF __pos)))
+	END_IF
+	LOCAL_VAR(TINT, sz, STRLEN(str) + 1)
+	CALLP1(SELF __MoveFilePos, sz)
+	RETURN_VAL(str)
+END_MEMBER_PROC
+
+// Read a line from text file.
+// CR+LF are read, but they are not appended to a value returned.
+// This function throws exception if a error appears.
+MEMBER_FUNC_0(TSTRING, ReadLine)
+	LOCAL_VAR(TSTRING, str, READ_LINE(SELF __stream))
+	IF(str == INVALID_STRING)
+		THROW(CALLF3(FormatMsg2, ErrLineTooLong, SELF __name, HEXFORM(SELF __pos)))
+	END_IF
+	ASSIGN(SELF __pos, FILE_TELL(SELF __stream))
+	RETURN_VAL(str)
+END_MEMBER_PROC
+
+END_CLASS // TFile
+
+// Global function to create object of the "TFile" class
+GLOBAL_FUNC_0(TFile, NewFile)
+	LOCAL_VAR(TFile, fl, NEW_VAL(TFile))
+	CALLP0(fl.Init)
+	RETURN_VAL(fl)
+END_GLOBAL_FUNC
+
+#endif // FILE_META

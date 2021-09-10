@@ -1,0 +1,85 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        FormatMsg.meta
+// Purpose:     Formatting of messages.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef FORMAT_MSG_META
+#define FORMAT_MSG_META
+
+#include "Meta.h"
+
+// Format message. The function replaces %1 in fmt with the first element of array args,
+// %2 in fmt with the second element of array args, and so on.
+GLOBAL_FUNC_2(TSTRING, FormatMsg, TSTRING, fmt, TARRAY(TSTRING), args)
+	LOCAL_VAR(TSTRING, msg, fmt)
+	FOR(i, 0, 9)
+		LOCAL_VAR(TSTRING, argtempl, T("%") + INT_TO_STRING(i + 1))
+		LOCAL_VAR(TINT, argpos, STRFIND(msg, argtempl))
+		IF(argpos != NOT_FOUND)
+			ASSIGN(msg, SUBSTR(msg, 0, argpos) + GET_ELEM(args, i) + SUBSTR(msg, argpos + 2, STRLEN(msg)))
+		END_IF
+	END_FOR
+	RETURN_VAL(msg)
+END_GLOBAL_FUNC
+
+GLOBAL_FUNC_1(TSTRING, FormatMsg0, TSTRING, fmt)
+	LOCAL_VAR(TARRAY(TSTRING), args, EMPTY_ARRAY(TSTRING))
+	RETURN_VAL(CALLF2(FormatMsg, fmt, args))
+END_GLOBAL_FUNC
+
+GLOBAL_FUNC_2(TSTRING, FormatMsg1, TSTRING, fmt, TSTRING, arg1)
+	LOCAL_VAR(TARRAY(TSTRING), args, EMPTY_ARRAY(TSTRING))
+	APPEND(args, arg1)
+	RETURN_VAL(CALLF2(FormatMsg, fmt, args))
+END_GLOBAL_FUNC
+
+GLOBAL_FUNC_3(TSTRING, FormatMsg2, TSTRING, fmt, TSTRING, arg1, TSTRING, arg2)
+	LOCAL_VAR(TARRAY(TSTRING), args, EMPTY_ARRAY(TSTRING))
+	APPEND(args, arg1)
+	APPEND(args, arg2)
+	RETURN_VAL(CALLF2(FormatMsg, fmt, args))
+END_GLOBAL_FUNC
+
+GLOBAL_FUNC_4(TSTRING, FormatMsg3, TSTRING, fmt, TSTRING, arg1, TSTRING, arg2, TSTRING, arg3)
+	LOCAL_VAR(TARRAY(TSTRING), args, EMPTY_ARRAY(TSTRING))
+	APPEND(args, arg1)
+	APPEND(args, arg2)
+	APPEND(args, arg3)
+	RETURN_VAL(CALLF2(FormatMsg, fmt, args))
+END_GLOBAL_FUNC
+
+GLOBAL_FUNC_5(TSTRING, FormatMsg4, TSTRING, fmt, TSTRING, arg1, TSTRING, arg2, TSTRING, arg3, TSTRING, arg4)
+	LOCAL_VAR(TARRAY(TSTRING), args, EMPTY_ARRAY(TSTRING))
+	APPEND(args, arg1)
+	APPEND(args, arg2)
+	APPEND(args, arg3)
+	APPEND(args, arg4)
+	RETURN_VAL(CALLF2(FormatMsg, fmt, args))
+END_GLOBAL_FUNC
+
+GLOBAL_FUNC_6(TSTRING, FormatMsg5, TSTRING, fmt, TSTRING, arg1, TSTRING, arg2, TSTRING, arg3, TSTRING, arg4, TSTRING, arg5)
+	LOCAL_VAR(TARRAY(TSTRING), args, EMPTY_ARRAY(TSTRING))
+	APPEND(args, arg1)
+	APPEND(args, arg2)
+	APPEND(args, arg3)
+	APPEND(args, arg4)
+	APPEND(args, arg5)
+	RETURN_VAL(CALLF2(FormatMsg, fmt, args))
+END_GLOBAL_FUNC
+
+GLOBAL_FUNC_7(TSTRING, FormatMsg6, TSTRING, fmt, TSTRING, arg1, TSTRING, arg2, TSTRING, arg3, TSTRING, arg4, TSTRING, arg5, TSTRING, arg6)
+	LOCAL_VAR(TARRAY(TSTRING), args, EMPTY_ARRAY(TSTRING))
+	APPEND(args, arg1)
+	APPEND(args, arg2)
+	APPEND(args, arg3)
+	APPEND(args, arg4)
+	APPEND(args, arg5)
+	APPEND(args, arg6)
+	RETURN_VAL(CALLF2(FormatMsg, fmt, args))
+END_GLOBAL_FUNC
+
+#endif // FORMAT_MSG_META

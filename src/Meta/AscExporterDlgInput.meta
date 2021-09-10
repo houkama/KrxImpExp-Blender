@@ -1,0 +1,153 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        AscExporterDlgInput.meta
+// Purpose:     Definition of TASCExporterDlgInput class.
+// Author:      Vitaly Baranov
+// Created:     January 26, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef ASC_EXPORTER_DLG_INPUT_META
+#define ASC_EXPORTER_DLG_INPUT_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "ModelHierarchy.meta"
+
+// Input dialog data for ascii model exporter
+CLASS(TASCExporterDlgInput)
+
+// Private section:
+MEMBER_VAR(TSTRING,                 __exportFileName)
+MEMBER_VAR(TARRAY(TModelHierarchy), __modelHierarchies)
+MEMBER_VAR(TSTRING,                 __selectedPrefix)
+MEMBER_VAR(TARRAY(TSTRING),         __selectedObjects)
+MEMBER_VAR(TINT,                    __startFrame)
+MEMBER_VAR(TINT,                    __endFrame)
+MEMBER_VAR(TFLOAT,                  __fileUnitsPerSystemUnit)
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __exportFileName,   EMPTY_STRING)
+	ASSIGN(SELF __modelHierarchies, EMPTY_ARRAY(TModelHierarchy))
+	ASSIGN(SELF __selectedPrefix,   EMPTY_STRING)
+	ASSIGN(SELF __selectedObjects,  EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __startFrame,       0)
+	ASSIGN(SELF __endFrame,         100)
+	ASSIGN(SELF __fileUnitsPerSystemUnit, 1)	
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(Write, TFile, f)
+	CALLP1(f.WriteString, SELF __exportFileName)
+	LOCAL_VAR(TINT, numModels, SIZE(SELF __modelHierarchies))
+	CALLP1(f.WriteUnsignedLong, numModels)
+	FOR(i, 0, numModels)
+		CALLP1(GET_ELEM(SELF __modelHierarchies, i).Write, f)
+	END_FOR
+	CALLP1(f.WriteString, SELF __selectedPrefix)
+	LOCAL_VAR(TINT, numSelectedObjects, SIZE(SELF __selectedObjects))
+	CALLP1(f.WriteUnsignedLong, numSelectedObjects)
+	FOR(i, 0, numSelectedObjects)
+		CALLP1(f.WriteString, GET_ELEM(SELF __selectedObjects, i))
+	END_FOR
+	CALLP1(f.WriteSignedLong, SELF __startFrame)
+	CALLP1(f.WriteSignedLong, SELF __endFrame)
+	CALLP1(f.WriteFloat,      SELF __fileUnitsPerSystemUnit)
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(Read, TFile, f)
+	ASSIGN(SELF __exportFileName, CALLF0(f.ReadString))
+	LOCAL_VAR(TINT, numModels, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __modelHierarchies, EMPTY_ARRAY(TModelHierarchy))
+	FOR(i, 0, numModels)
+		LOCAL_VAR(TModelHierarchy, mh, CALLF0(NewModelHierarchy))
+		CALLP1(mh.Read, f)
+		APPEND(SELF __modelHierarchies, mh)
+	END_FOR
+	ASSIGN(SELF __selectedPrefix, CALLF0(f.ReadString))
+	LOCAL_VAR(TINT, numSelectedObjects, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __selectedObjects, EMPTY_ARRAY(TSTRING))
+	FOR(i, 0, numSelectedObjects)
+		APPEND(SELF __selectedObjects, CALLF0(f.ReadString))
+	END_FOR
+	ASSIGN(SELF __startFrame, CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __endFrame, CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __fileUnitsPerSystemUnit, CALLF0(f.ReadFloat))
+END_MEMBER_PROC
+
+// Export file name
+MEMBER_PROC_1(SetExportFileName, TSTRING, exportFileName)
+	ASSIGN(SELF __exportFileName, exportFileName)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TSTRING), GetExportFileName)
+	RETURN_VAL(SELF __exportFileName)
+END_MEMBER_FUNC
+	
+// Array of model hierarchies
+MEMBER_PROC_1(SetModelHierarchies, TARRAY(TModelHierarchy), modelHierarchies)
+	ASSIGN(SELF __modelHierarchies, modelHierarchies)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TARRAY(TModelHierarchy)), GetModelHierarchies)
+	RETURN_VAL(SELF __modelHierarchies)
+END_MEMBER_FUNC
+
+// Selected prefix
+MEMBER_PROC_1(SetSelectedPrefix, TSTRING, selectedPrefix)
+	ASSIGN(SELF __selectedPrefix, selectedPrefix)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TSTRING), GetSelectedPrefix)
+	RETURN_VAL(SELF __selectedPrefix)
+END_MEMBER_FUNC
+
+// Array of selected objects
+MEMBER_PROC_1(SetSelectedObjects, TARRAY(TSTRING), selectedObjects)
+	ASSIGN(SELF __selectedObjects, selectedObjects)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSelectedObjects)
+	RETURN_VAL(SELF __selectedObjects)
+END_MEMBER_FUNC
+
+// First frame 
+MEMBER_PROC_1(SetStartFrame, TINT, frameIndex)
+	ASSIGN(SELF __startFrame, frameIndex)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetStartFrame)
+	RETURN_VAL(SELF __startFrame)
+END_MEMBER_FUNC
+
+// Last frame 
+MEMBER_PROC_1(SetEndFrame, TINT, frameIndex)
+	ASSIGN(SELF __endFrame, frameIndex)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetEndFrame)
+	RETURN_VAL(SELF __endFrame)
+END_MEMBER_FUNC
+
+// Default number of file units per 1 system unit
+MEMBER_PROC_1(SetFileUnitsPerSystemUnit, TFLOAT, scaleCoef)
+	ASSIGN(SELF __fileUnitsPerSystemUnit, scaleCoef)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TFLOAT, GetFileUnitsPerSystemUnit)
+	RETURN_VAL(SELF __fileUnitsPerSystemUnit)
+END_MEMBER_FUNC
+
+END_CLASS // TASCExporterDlgInput
+
+// Global function to create object of TASCExporterDlgInput class
+GLOBAL_FUNC_0(TASCExporterDlgInput, NewASCExporterDlgInput)
+	LOCAL_VAR(TASCExporterDlgInput, dlgInput, NEW_VAL(TASCExporterDlgInput))
+	CALLP0(dlgInput.Init)
+	RETURN_VAL(dlgInput)
+END_GLOBAL_FUNC
+
+#endif // ASC_EXPORTER_DLG_INPUT_META

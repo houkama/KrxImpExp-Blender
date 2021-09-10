@@ -1,0 +1,28 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        AscImporterDefs.meta
+// Purpose:     Named constants for using in the "AscImporterDlgInput.meta" 
+//              and "AscImporterDlgOutput.meta" files
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef ASC_IMPORTER_DEFS_META
+#define ASC_IMPORTER_DEFS_META
+
+#include "Meta.h"
+#include "AscTypes.meta"
+
+// Possible values for asc file importer's (what to do with existing objects) value
+#define CURSCN_REPLACE_SCENE	1
+#define CURSCN_MERGE_SCENE	2
+#define CURSCN_LINK_TO_SLOT	3
+#define CURSCN_LINK_TO_BONE	4
+#define CURSCN_REPLACE_SKIN	5
+#define CURSCN_MERGE_SKIN	6
+
+#define CURANIM_REPLACE_ANIMATION	1
+#define CURANIM_MERGE_ANIMATION		2
+
+#endif // ASC_IMPORTER_DEFS_META

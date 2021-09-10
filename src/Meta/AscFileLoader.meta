@@ -1,0 +1,2066 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        AscFileLoader.meta
+// Purpose:     Definition of TASCFileLoader class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef ASC_FILE_LOADER_META
+#define ASC_FILE_LOADER_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "NameAnalyzer.meta"
+#include "ObjectDisplayProps.meta"
+#include "ObjectDesc.meta"
+#include "SpaceTransform.meta"
+#include "TimeTransform.meta"
+#include "ObjArrayUtils.meta"
+
+// Error message 
+#define ErrFileIsNotASC			_T("File is not an ASCII model.\nFile name: \"%1\".")
+#define ErrUnexpectedEOF		_T("Unexpected end of file.\nFile name: \"%1\".")
+#define ErrExpectedCertainToken	_T("Unexpected token: \"%1\".\nToken required here: \"%2\".\nLine: %3, column: %4.\nFile name: \"%5\".")
+#define ErrExpectedString		_T("Unexpected token: \"%1\".\nRequired a quoted string here.\nLine: %2, column: %3.\nFile name: \"%4\".")
+#define ErrExpectedInt			_T("Unexpected token: \"%1\".\nRequired an integer number here.\nLine: %2, column: %3.\nFile name: \"%4\".")
+#define ErrExpectedFloat		_T("Unexpected token: \"%1\".\nRequired a floating point number here.\nLine: %2, column: %3.\nFile name: \"%4\".")
+#define ErrInvalidSubMtlClass	_T("Invalid class of sub-material: %1.\nSupported only the \"Standard\" sub-material class.\nLine: %2, column: %3.\nFile name: \"%4\".")
+#define ErrInvalidMtlClass		_T("Invalid class of material: %1.\nSupported only the \"Standard\" and \"Multi/Sub-Object\" material classes.\nLine: %2, column: %3.\nFile name: \"%4\".")
+#define ErrSubMtlIdxOutOfRange  T("Sub-material index %1 is out of range.\nAllowable range: %2..%3.\nLine: %4, column: %5.\nFile name: \"%6\".")
+#define ErrMtlIdxOutOfRange		_T("Material index %1 is out of range.\nAllowable range: %2..%3.\nLine: %4, column: %5.\nFile name: \"%6\".")
+#define ErrVertIdxOutOfRange	_T("Vertex index %1 is out of range.\nAllowable range: %2..%3.\nLine: %4, column: %5.\nFile name: \"%6\".")
+#define ErrFaceIdxOutOfRange	_T("Face index %1 is out of range.\nAllowable range: %2..%3.\nLine: %4, column: %5.\nFile name: \"%6\".")
+#define ErrTVertIdxOutOfRange	_T("Texture vertex index %1 is out of range.\nAllowable range: %2..%3.\nLine: %4, column: %5.\nFile name: \"%6\".")
+#define ErrObjectAlreadyExists	_T("Cannot create an object with name \"%1\", because an object with the same name already exists.\nLine: %2, column: %3.\nFile name: \"%4\".")
+#define ErrObjectNotFound		_T("Object \"%1\" not found.\nLine: %2, column: %3.\nFile name: \"%4\".")
+
+// Class for loading an ASC file
+CLASS(TASCFileLoader)
+
+// Private section:
+MEMBER_VAR(TFile,             __file)
+MEMBER_VAR(TSTRING,           __filename)
+MEMBER_VAR(TSTRING,           __lineText)
+MEMBER_VAR(TINT,              __line)
+MEMBER_VAR(TINT,              __column)
+MEMBER_VAR(TSTRING,           __token)
+MEMBER_VAR(TSTRING,           __token1)
+MEMBER_VAR(TSTRING,           __token2)
+MEMBER_VAR(TSTRING,           __token3)
+MEMBER_VAR(TINT,              __tokenLine)
+MEMBER_VAR(TINT,              __tokenColumn)
+MEMBER_VAR(TSTRING,           __tokenEOF)
+MEMBER_VAR(TINT,              __animStartFrame)
+MEMBER_VAR(TINT,              __animEndFrame)
+MEMBER_VAR(TINT,              __animFrameRate)
+MEMBER_VAR(TARRAY(TARRAY(TMaterialDesc)), __materialsDesc)
+MEMBER_VAR(TARRAY(TObjectDesc), __objectsDesc)
+MEMBER_VAR(TINT,              __numBones)
+MEMBER_VAR(TBOOL,             __bip01Found)
+MEMBER_VAR(TINT,              __numSlots)
+MEMBER_VAR(TINT,              __numMeshes)
+MEMBER_VAR(TINT,              __numTMAnimations)
+MEMBER_VAR(TINT,              __numMeshAnimations)
+MEMBER_VAR(TINT,              __numSoftSkins)
+MEMBER_VAR(TINT,              __ascType)
+MEMBER_VAR(TSpaceTransform,   __spaceTransform)
+MEMBER_VAR(TFLOAT,            __scaleCoef)
+MEMBER_VAR(TTimeTransform,    __timeTransform)
+MEMBER_VAR(TSTRING,           __modelPrefix)
+MEMBER_VAR(TSTRING,           __skinType)
+MEMBER_VAR(TARRAY(TARRAY(TMATERIAL)), __impMaterials)
+MEMBER_VAR(TARRAY(TOBJECT),   __impObjects)
+MEMBER_VAR(TARRAY(TSTRING),   __impObjectNames)
+MEMBER_VAR(TARRAY(TOBJECT),   __modelBonesAndSlots)
+MEMBER_VAR(TARRAY(TMATRIX3),  __modelBonesAndSlotsStoredTMs)
+MEMBER_VAR(TPOINT3,           __boneBoundBoxMinPoint)
+MEMBER_VAR(TPOINT3,           __boneBoundBoxMaxPoint)
+MEMBER_VAR(TARRAY(TBOOL),     __animatedOrHasAnimatedParent)
+MEMBER_VAR(TARRAY(TMATRIX3),  __animationTMs)
+
+// Is the specified symbol a floating-point number digit?
+MEMBER_FUNC_1(TBOOL, __IsFDigit, TSTRING, ch)
+	IF((ch == T("0")) OR (ch == T("1")) OR (ch == T("2")) OR (ch == T("3")))
+		RETURN_VAL(TRUE)
+	END_IF
+	IF((ch == T("4")) OR (ch == T("5")) OR (ch == T("6")) OR (ch == T("7")))
+		RETURN_VAL(TRUE)
+	END_IF
+	IF((ch == T("8")) OR (ch == T("9")) OR (ch == T("+")) OR (ch == T("-")))
+		RETURN_VAL(TRUE)
+	END_IF
+	IF((ch == T(".")) OR (ch == T("e")) OR (ch == T("E")))
+		RETURN_VAL(TRUE)
+	END_IF
+	RETURN_VAL(FALSE)
+END_MEMBER_FUNC
+
+// Read single token from file. Returns read token or empty string if could not read.
+MEMBER_FUNC_0(REF(TSTRING), __ReadTokenSafe)
+	// skip white spaces
+	LOCAL_VAR(TSTRING, ch, T(" "))
+	WHILE((ch == T(" ")) OR (ch == T("\t")))
+		// read the next line from file if it's needed
+		IF(((SELF __column) > STRLEN(SELF __lineText)) OR (SELF __line == 0))
+			IF(CALLF0(SELF __file.Eof))
+				RETURN_VAL(SELF __tokenEOF)
+			END_IF
+			ASSIGN(SELF __line, SELF __line + 1)
+			ASSIGN(SELF __lineText, CALLF0(SELF __file.ReadLine))
+			ASSIGN(SELF __column, 1)
+		END_IF
+		
+		// skip character if this is a whitespace
+		ASSIGN(ch, SUBSTR(SELF __lineText, SELF __column - 1, SELF __column))
+		ASSIGN(SELF __column, SELF __column + 1)
+	END_WHILE
+	
+	// store new token position
+	ASSIGN(SELF __tokenLine, SELF __line)
+	ASSIGN(SELF __tokenColumn, SELF __column - 1)
+	
+	// store old tokens:
+	// __token - current token, __token1 - previous token,
+	// __token2 - previous before previous token, and so on.
+	ASSIGN(SELF __token3, SELF __token2)
+	ASSIGN(SELF __token2, SELF __token1)
+	ASSIGN(SELF __token1, SELF __token)
+	ASSIGN(SELF __token, ch) 
+
+	// the token's beginning was found, scan the token's end
+	IF(ch == T("\""))
+		WHILE(SELF __column <= STRLEN(SELF __lineText))
+			ASSIGN(ch, SUBSTR(SELF __lineText, SELF __column - 1, SELF __column))
+			ASSIGN(SELF __column, SELF __column + 1)
+			ASSIGN(SELF __token, SELF __token + ch)
+			IF(ch == T("\""))
+				BREAK
+			END_IF
+		END_WHILE
+	ELSE_IF(CALLF1(SELF __IsFDigit, ch))
+		WHILE(SELF __column <= STRLEN(SELF __lineText))
+			ASSIGN(ch, SUBSTR(SELF __lineText, SELF __column - 1, SELF __column))
+			IF(NOT(CALLF1(SELF __IsFDigit, ch)))
+				BREAK
+			END_IF
+			ASSIGN(SELF __column, SELF __column + 1)
+			ASSIGN(SELF __token, SELF __token + ch)
+		END_WHILE
+	ELSE
+		WHILE(SELF __column <= STRLEN(SELF __lineText))
+			ASSIGN(ch, SUBSTR(SELF __lineText, SELF __column - 1, SELF __column))
+			IF(ch == T(" ") OR ch == T("\t"))
+				BREAK
+			END_IF
+			ASSIGN(SELF __column, SELF __column + 1)
+			ASSIGN(SELF __token, SELF __token + ch)
+		END_WHILE
+	END_IF
+
+	RETURN_VAL(SELF __token)
+END_MEMBER_FUNC
+
+// Read line from file.
+MEMBER_FUNC_0(REF(TSTRING), __ReadLine)
+	// read the next line from file if it's needed
+	IF(((SELF __column) > STRLEN(SELF __lineText)) OR (SELF __line == 0))
+		IF(CALLF0(SELF __file.Eof))
+			THROW(CALLF2(FormatMsg1, ErrUnexpectedEOF, SELF __filename))
+		END_IF
+		ASSIGN(SELF __line, SELF __line + 1)
+		ASSIGN(SELF __lineText, CALLF0(SELF __file.ReadLine))
+		ASSIGN(SELF __column, 1)
+	END_IF
+
+	// store new token position
+	ASSIGN(SELF __tokenLine, SELF __line)
+	ASSIGN(SELF __tokenColumn, SELF __column)
+	
+	// store old tokens:
+	// __token - current token, __token1 - previous token,
+	// __token2 - previous before previous token, and so on.
+	ASSIGN(SELF __token3, SELF __token2)
+	ASSIGN(SELF __token2, SELF __token1)
+	ASSIGN(SELF __token1, SELF __token)
+	
+	// the result is rest of line
+	ASSIGN(SELF __token, SUBSTR(SELF __lineText, SELF __column - 1, STRLEN(SELF __lineText)))
+	ASSIGN(SELF __column, STRLEN(SELF __lineText) + 1)
+	
+	RETURN_VAL(SELF __token)
+END_MEMBER_FUNC
+
+// Read single token from file. Throws exception if could not read.
+MEMBER_FUNC_0(REF(TSTRING), __ReadToken)
+	LOCAL_VAR(REF(TSTRING), token, CALLF0(SELF __ReadTokenSafe))
+	IF(token == EMPTY_STRING)
+		THROW(CALLF2(FormatMsg1, ErrUnexpectedEOF, SELF __filename))
+	END_IF
+	RETURN_VAL(token)
+END_MEMBER_FUNC
+
+// Read known token. Throws exception if token read is not equal to specified string.
+MEMBER_PROC_1(__ReadCertainToken, TSTRING, tokenRequired)
+	LOCAL_VAR(TSTRING, tokenRead, CALLF0(SELF __ReadToken))
+	IF(STRICMP(tokenRequired, tokenRead) != 0)
+		THROW(CALLF6(FormatMsg5, ErrExpectedCertainToken, tokenRead, tokenRequired, INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+	END_IF
+END_MEMBER_PROC
+
+// Read quoted string from file. Returns read string without quotes.
+MEMBER_FUNC_0(TSTRING, __ReadString)
+	LOCAL_VAR(TSTRING, token, CALLF0(SELF __ReadToken))
+	LOCAL_VAR(TINT, toklen, STRLEN(token))
+	LOCAL_VAR(TSTRING, firstChar, SUBSTR(token, 0, 1))
+	LOCAL_VAR(TSTRING, lastChar, SUBSTR(token, toklen - 1, toklen))
+	IF(toklen < 2 OR firstChar != T("\"") OR lastChar != T("\""))
+		THROW(CALLF5(FormatMsg4, ErrExpectedString, token, INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+	END_IF
+	RETURN_VAL(SUBSTR(token, 1, toklen - 1))
+END_MEMBER_FUNC
+
+// Read integer from file.
+MEMBER_FUNC_0(TINT, __ReadInt)
+	LOCAL_VAR(TSTRING, token, CALLF0(SELF __ReadToken))
+	LOCAL_VAR(TINT, r, STRING_TO_INT(token))
+	IF(r == INVALID_INT)
+		THROW(CALLF5(FormatMsg4, ErrExpectedInt, token, INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+	END_IF
+	RETURN_VAL(r)
+END_MEMBER_FUNC
+
+// Read floating point number from file
+MEMBER_FUNC_0(TFLOAT, __ReadFloat)
+	LOCAL_VAR(TSTRING, token, CALLF0(SELF __ReadToken))
+	LOCAL_VAR(TFLOAT, r, STRING_TO_FLOAT(token))
+	IF(r == INVALID_FLOAT)
+		THROW(CALLF5(FormatMsg4, ErrExpectedFloat, token, INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+	END_IF
+	RETURN_VAL(r)
+END_MEMBER_FUNC
+
+// Read three-dimensional point from file
+MEMBER_FUNC_0(TPOINT3, __ReadPoint3)
+	LOCAL_VAR(TFLOAT, x, CALLF0(SELF __ReadFloat))
+	LOCAL_VAR(TFLOAT, y, CALLF0(SELF __ReadFloat))
+	LOCAL_VAR(TFLOAT, z, CALLF0(SELF __ReadFloat))
+	RETURN_VAL(NEW_POINT3(x, y, z))
+END_MEMBER_FUNC
+
+// Read texture coordinates from file
+MEMBER_FUNC_0(TUVVERT, __ReadUVVert)
+	LOCAL_VAR(TFLOAT, u, CALLF0(SELF __ReadFloat))
+	LOCAL_VAR(TFLOAT, v, CALLF0(SELF __ReadFloat))
+	LOCAL_VAR(TFLOAT, w, CALLF0(SELF __ReadFloat))
+	RETURN_VAL(NEW_UVVERT(u, v))
+END_MEMBER_FUNC
+
+// Read color components from file
+MEMBER_FUNC_0(TCOLOR, __ReadColor)
+	LOCAL_VAR(TFLOAT, r, CALLF0(SELF __ReadFloat))
+	LOCAL_VAR(TFLOAT, g, CALLF0(SELF __ReadFloat))
+	LOCAL_VAR(TFLOAT, b, CALLF0(SELF __ReadFloat))
+	RETURN_VAL(NEW_COLOR(r, g, b))
+END_MEMBER_FUNC
+
+// Read asc version (must be 110)
+MEMBER_PROC_0(__ReadASCVersion)
+	LOCAL_VAR(TINT, ver, CALLF0(SELF __ReadInt))
+END_MEMBER_PROC
+
+// Skip comment
+MEMBER_PROC_0(__ReadComment)
+	LOCAL_VAR(TSTRING, comment, CALLF0(SELF __ReadString))
+END_MEMBER_PROC
+
+// Read scene information (tag *SCENE)
+MEMBER_PROC_0(__ReadSceneInfo)
+	LOCAL_VAR(TSTRING, caption, T("Reading scene info"))
+	SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	WHILE(TRUE)
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(token, T("*SCENE_FIRSTFRAME")) == 0)
+			ASSIGN(SELF __animStartFrame, CALLF0(SELF __ReadInt))
+		ELSE_IF(STRICMP(token, T("*SCENE_LASTFRAME")) == 0)
+			ASSIGN(SELF __animEndFrame, CALLF0(SELF __ReadInt))
+		ELSE_IF(STRICMP(token, T("*SCENE_FRAMESPEED")) == 0)
+			ASSIGN(SELF __animFrameRate, CALLF0(SELF __ReadInt))
+		ELSE_IF(token == T("{"))
+			ASSIGN(level, level + 1)
+		ELSE_IF(token == T("}"))
+			ASSIGN(level, level - 1)
+		END_IF
+		IF(level == 0)
+			BREAK
+		END_IF
+	END_WHILE
+END_MEMBER_PROC
+
+// Read map description (tag *MAP_DIFFUSE)
+MEMBER_FUNC_0(TSTRING, __ReadMap)
+	LOCAL_VAR(TSTRING, mapFileName, EMPTY_STRING)
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	WHILE(TRUE)
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(token, T("*BITMAP")) == 0)
+			ASSIGN(mapFileName, CALLF0(SELF __ReadString))
+		ELSE_IF(token == T("{"))
+			ASSIGN(level, level + 1)
+		ELSE_IF(token == T("}"))
+			ASSIGN(level, level - 1)
+		END_IF
+		IF(level == 0)
+			BREAK
+		END_IF
+	END_WHILE	
+	RETURN_VAL(mapFileName)
+END_MEMBER_FUNC
+
+// Read submaterial (tag *SUBMATERIAL)
+MEMBER_FUNC_0(TMaterialDesc, __ReadSubMaterial)
+	LOCAL_VAR(TSTRING, mtlName, EMPTY_STRING)
+	LOCAL_VAR(TSTRING, mtlClass, EMPTY_STRING)
+	LOCAL_VAR(TCOLOR, clrDiffuse, BLACK_COLOR)
+	LOCAL_VAR(TSTRING, mapDiffuse, EMPTY_STRING)
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	WHILE(TRUE)
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(token, T("*MATERIAL_NAME")) == 0)
+			ASSIGN(mtlName, CALLF0(SELF __ReadString))
+		ELSE_IF(STRICMP(token, T("*MATERIAL_CLASS")) == 0)
+			ASSIGN(mtlClass, CALLF0(SELF __ReadString))
+			IF(STRICMP(mtlClass, T("Standard")) != 0)
+				THROW(CALLF5(FormatMsg4, ErrInvalidSubMtlClass, token, INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+		ELSE_IF(STRICMP(token, T("*MATERIAL_DIFFUSE")) == 0)
+			ASSIGN(clrDiffuse, CALLF0(SELF __ReadColor))
+		ELSE_IF(STRICMP(token, T("*MAP_DIFFUSE")) == 0)
+			ASSIGN(mapDiffuse, CALLF0(SELF __ReadMap))
+		ELSE_IF(token == T("{"))
+			ASSIGN(level, level + 1)
+		ELSE_IF(token == T("}"))
+			ASSIGN(level, level - 1)
+		END_IF
+		IF(level == 0)
+			BREAK
+		END_IF
+	END_WHILE
+	LOCAL_VAR(TMaterialDesc, mtlDesc, CALLF0(NewMaterialDesc))
+	CALLP1(mtlDesc.SetMaterialName, mtlName)
+	CALLP1(mtlDesc.SetDiffuseMapFilename, mapDiffuse)
+	CALLP1(mtlDesc.SetDiffuseColor, clrDiffuse)
+	RETURN_VAL(mtlDesc)
+END_MEMBER_FUNC
+
+// Read material (tag *MATERIAL)
+MEMBER_FUNC_0(TARRAY(TMaterialDesc), __ReadMaterial)
+	LOCAL_VAR(TSTRING, mtlName, EMPTY_STRING)
+	LOCAL_VAR(TSTRING, mtlClass, EMPTY_STRING)
+	LOCAL_VAR(TCOLOR, clrDiffuse, BLACK_COLOR)
+	LOCAL_VAR(TSTRING, mapDiffuse, EMPTY_STRING)
+	LOCAL_VAR(TINT, numSubMtls, 0)
+	LOCAL_VAR(TARRAY(TMaterialDesc), subMtls, EMPTY_ARRAY(TMaterialDesc))
+	LOCAL_VAR(TINT, subMtlIndex, 0)
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	WHILE(TRUE)
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(token, T("*MATERIAL_NAME")) == 0)
+			ASSIGN(mtlName, CALLF0(SELF __ReadString))
+			LOCAL_VAR(TSTRING, caption, T("Reading materials"))
+			SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+		ELSE_IF(STRICMP(token, T("*MATERIAL_CLASS")) == 0)
+			ASSIGN(mtlClass, CALLF0(SELF __ReadString))
+			IF(STRICMP(mtlClass, T("Standard")) != 0 AND STRICMP(mtlClass, T("Multi/Sub-Object")) != 0)
+				THROW(CALLF5(FormatMsg4, ErrInvalidMtlClass, token, INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+		ELSE_IF(STRICMP(token, T("*MATERIAL_DIFFUSE")) == 0)
+			ASSIGN(clrDiffuse, CALLF0(SELF __ReadColor))
+		ELSE_IF(STRICMP(token, T("*MAP_DIFFUSE")) == 0)
+			ASSIGN(mapDiffuse, CALLF0(SELF __ReadMap))
+		ELSE_IF(STRICMP(token, T("*NUMSUBMTLS")) == 0)
+			ASSIGN(numSubMtls, CALLF0(SELF __ReadInt))
+			ASSIGN(subMtls, EMPTY_ARRAY(TMaterialDesc))
+			FOR(i, 0, numSubMtls)
+				APPEND(subMtls, CALLF0(NewMaterialDesc))
+			END_FOR
+		ELSE_IF(STRICMP(token, T("*SUBMATERIAL")) == 0)
+			ASSIGN(subMtlIndex, CALLF0(SELF __ReadInt))
+			IF(subMtlIndex < 0 OR subMtlIndex >= numSubMtls)
+				THROW(CALLF7(FormatMsg6, ErrSubMtlIdxOutOfRange, SELF __token, T("0"), INT_TO_STRING(numSubMtls - 1), INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+			SET_ELEM(subMtls, subMtlIndex, CALLF0(SELF __ReadSubMaterial))
+		ELSE_IF(token == T("{"))
+			ASSIGN(level, level + 1)
+		ELSE_IF(token == T("}"))
+			ASSIGN(level, level - 1)
+		END_IF
+		IF(level == 0)
+			BREAK
+		END_IF
+	END_WHILE
+	IF(numSubMtls == 0)
+		LOCAL_VAR(TMaterialDesc, mtlDesc, CALLF0(NewMaterialDesc))
+		CALLP1(mtlDesc.SetMaterialName, mtlName)
+		CALLP1(mtlDesc.SetDiffuseMapFilename, mapDiffuse)
+		CALLP1(mtlDesc.SetDiffuseColor, clrDiffuse)		
+		APPEND(subMtls, mtlDesc)
+	END_IF
+	RETURN_VAL(subMtls)
+END_MEMBER_FUNC
+
+// Read material list (tag *MATERIAL_LIST)
+MEMBER_PROC_0(__ReadMaterialList)
+	ASSIGN(SELF __materialsDesc, EMPTY_ARRAY(TARRAY(TMaterialDesc)))
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	LOCAL_VAR(TINT, numMtls, 0)
+	LOCAL_VAR(TINT, mtlIndex, 0)
+	WHILE(TRUE)
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(token, T("*MATERIAL_COUNT")) == 0)
+			ASSIGN(numMtls, CALLF0(SELF __ReadInt))
+			ASSIGN(SELF __materialsDesc, EMPTY_ARRAY(TARRAY(TMaterialDesc)))
+			FOR(i, 0, numMtls)
+				APPEND(SELF __materialsDesc, EMPTY_ARRAY(TMaterialDesc))
+			END_FOR
+		ELSE_IF(STRICMP(token, T("*MATERIAL")) == 0)
+			ASSIGN(mtlIndex, CALLF0(SELF __ReadInt))
+			IF(mtlIndex < 0 OR mtlIndex >= numMtls)
+				THROW(CALLF7(FormatMsg6, ErrMtlIdxOutOfRange, SELF __token, T("0"), INT_TO_STRING(numMtls - 1), INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+			SET_ELEM(SELF __materialsDesc, mtlIndex, CALLF0(SELF __ReadMaterial))
+		ELSE_IF(token == T("{"))
+			ASSIGN(level, level + 1)
+		ELSE_IF(token == T("}"))
+			ASSIGN(level, level - 1)
+		END_IF
+		IF(level == 0)
+			BREAK
+		END_IF
+	END_WHILE	
+END_MEMBER_PROC
+
+// Read object's material index
+MEMBER_PROC_1(__ReadMaterialRef, TObjectDesc, objDesc)
+	LOCAL_VAR(TINT, mtlIndex, CALLF0(SELF __ReadInt))
+	CALLP1(objDesc.SetMaterialRef, mtlIndex)
+END_MEMBER_PROC
+
+// Read object's transformation matrix (tag *NODE_TM)
+MEMBER_PROC_1(__ReadNodeTM, TObjectDesc, objDesc)
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	LOCAL_VAR(TMATRIX3, tm, IDENTITY_MATRIX3)
+	WHILE(TRUE)
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(token, T("*TM_ROW0")) == 0)
+			SET_ROW0(tm, CALLF0(SELF __ReadPoint3))
+		ELSE_IF(STRICMP(token, T("*TM_ROW1")) == 0)
+			SET_ROW1(tm, CALLF0(SELF __ReadPoint3))
+		ELSE_IF(STRICMP(token, T("*TM_ROW2")) == 0)
+			SET_ROW2(tm, CALLF0(SELF __ReadPoint3))
+		ELSE_IF(STRICMP(token, T("*TM_ROW3")) == 0)
+			SET_ROW3(tm, CALLF0(SELF __ReadPoint3))
+		ELSE_IF(token == T("{"))
+			ASSIGN(level, level + 1)
+		ELSE_IF(token == T("}"))
+			ASSIGN(level, level - 1)
+		END_IF
+		IF(level == 0)
+			BREAK
+		END_IF
+	END_WHILE
+	CALLP1(objDesc.SetTransform, tm)
+END_MEMBER_PROC
+
+// Read list of vertices (tag *MESH_VERTEX_LIST)
+MEMBER_PROC_1(__ReadVertexList, TObjectDesc, objDesc)
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	LOCAL_VAR(TINT, vertIndex, 0)
+	LOCAL_VAR(TPOINT3, pt, ZERO_POINT3)
+	LOCAL_VAR(TMATRIX3, matWorldToLocal, INVERSE(CALLF0(objDesc.GetTransform)))
+	LOCAL_VAR(REF(TMeshDesc), mshDesc, CALLF0(objDesc.GetMeshDesc))
+	LOCAL_VAR(TINT, numVerts, CALLF0(mshDesc.GetNumVerts))
+	WHILE(TRUE)
+		IF(BIT_AND(vertIndex, 15) == 0)
+			LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), CALLF0(objDesc.GetObjectName)))
+			SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+		END_IF
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(token, T("*MESH_VERTEX")) == 0)
+			ASSIGN(vertIndex, CALLF0(SELF __ReadInt))
+			IF(vertIndex < 0 OR vertIndex >= numVerts)
+				THROW(CALLF7(FormatMsg6, ErrVertIdxOutOfRange, SELF __token, T("0"), INT_TO_STRING(numVerts - 1), INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+			ASSIGN(pt, CALLF0(SELF __ReadPoint3))
+			ASSIGN(pt, MULVECMAT(pt, matWorldToLocal))
+			CALLP2(mshDesc.SetVert, vertIndex, pt)
+		ELSE_IF(token == T("{"))
+			ASSIGN(level, level + 1)
+		ELSE_IF(token == T("}"))
+			ASSIGN(level, level - 1)
+		END_IF
+		IF(level == 0)
+			BREAK
+		END_IF
+	END_WHILE		
+END_MEMBER_PROC
+
+// Read list of faces (tag *MESH_FACE_LIST)
+MEMBER_PROC_1(__ReadFaceList, TObjectDesc, objDesc)
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	LOCAL_VAR(TINT, faceIndex, 0)
+	LOCAL_VAR(REF(TMeshDesc), mshDesc, CALLF0(objDesc.GetMeshDesc))
+	LOCAL_VAR(TINT, numFaces, CALLF0(mshDesc.GetNumFaces))
+	LOCAL_VAR(TINT, numVerts, CALLF0(mshDesc.GetNumVerts))
+	WHILE(TRUE)
+		IF(BIT_AND(faceIndex, 15) == 0)
+			LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), CALLF0(objDesc.GetObjectName)))
+			SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+		END_IF
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(token, T("*MESH_FACE")) == 0)
+			ASSIGN(faceIndex, CALLF0(SELF __ReadInt))
+			IF(faceIndex < 0 OR faceIndex >= numFaces)
+				THROW(CALLF7(FormatMsg6, ErrFaceIdxOutOfRange, SELF __token, T("0"), INT_TO_STRING(numFaces - 1), INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+		ELSE_IF(STRICMP(token, T("A:")) == 0)
+			LOCAL_VAR(TINT, vA, CALLF0(SELF __ReadInt))
+			IF(vA < 0 OR vA >= numVerts)
+				THROW(CALLF7(FormatMsg6, ErrVertIdxOutOfRange, SELF __token, T("0"), INT_TO_STRING(numVerts - 1), INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+			LOCAL_VAR(TFACE, f, CALLF1(mshDesc.GetFace, faceIndex))
+			SET_FACE_VERT(f, 0, vA)
+			CALLP2(mshDesc.SetFace, faceIndex, f)
+		ELSE_IF(STRICMP(token, T("B:")) == 0)
+			LOCAL_VAR(TINT, vB, CALLF0(SELF __ReadInt))
+			IF(vB < 0 OR vB >= numVerts)
+				THROW(CALLF7(FormatMsg6, ErrVertIdxOutOfRange, SELF __token, T("0"), INT_TO_STRING(numVerts - 1), INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+			LOCAL_VAR(TFACE, f, CALLF1(mshDesc.GetFace, faceIndex))
+			SET_FACE_VERT(f, 1, vB)
+			CALLP2(mshDesc.SetFace, faceIndex, f)
+		ELSE_IF(STRICMP(token, T("C:")) == 0)
+			LOCAL_VAR(TINT, vC, CALLF0(SELF __ReadInt))
+			IF(vC < 0 OR vC >= numVerts)
+				THROW(CALLF7(FormatMsg6, ErrVertIdxOutOfRange, SELF __token, T("0"), INT_TO_STRING(numVerts - 1), INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+			LOCAL_VAR(TFACE, f, CALLF1(mshDesc.GetFace, faceIndex))
+			SET_FACE_VERT(f, 2, vC)
+			CALLP2(mshDesc.SetFace, faceIndex, f)
+		ELSE_IF(STRICMP(token, T("AB:")) == 0)
+			LOCAL_VAR(TBOOL, edgeAB, TRUE)
+			IF(CALLF0(SELF __ReadInt) == 0)
+				ASSIGN(edgeAB, FALSE)
+			END_IF
+			CALLP3(mshDesc.SetEdgeVis, faceIndex, 0, edgeAB)
+		ELSE_IF(STRICMP(token, T("BC:")) == 0)
+			LOCAL_VAR(TBOOL, edgeBC, TRUE)
+			IF(CALLF0(SELF __ReadInt) == 0)
+				ASSIGN(edgeBC, FALSE)
+			END_IF
+			CALLP3(mshDesc.SetEdgeVis, faceIndex, 1, edgeBC)
+		ELSE_IF(STRICMP(token, T("CA:")) == 0)
+			LOCAL_VAR(TBOOL, edgeCA, TRUE)
+			IF(CALLF0(SELF __ReadInt) == 0)
+				ASSIGN(edgeCA, FALSE)
+			END_IF
+			CALLP3(mshDesc.SetEdgeVis, faceIndex, 2, edgeCA)
+		ELSE_IF(STRICMP(token, T("*MESH_SMOOTHING")) == 0)
+			ASSIGN(token, CALLF0(SELF __ReadToken))
+			LOCAL_VAR(TINT, smGroup, STRING_TO_INT(token))
+			IF(smGroup != INVALID_INT)
+				CALLP2(mshDesc.SetFaceSmoothGroup, faceIndex, smGroup)
+			END_IF
+		END_IF	
+		IF(STRICMP(token, T("*MESH_MTLID")) == 0)
+			LOCAL_VAR(TINT, faceMtlIndex, CALLF0(SELF __ReadInt))
+			CALLP2(mshDesc.SetFaceMatID, faceIndex, faceMtlIndex)
+		ELSE_IF(token == T("{"))
+			ASSIGN(level, level + 1)
+		ELSE_IF(token == T("}"))
+			ASSIGN(level, level - 1)
+		END_IF
+		IF(level == 0)
+			BREAK
+		END_IF
+	END_WHILE		
+END_MEMBER_PROC
+
+// Read list of texture vertices (tag *MESH_TVERT_LIST)
+MEMBER_PROC_1(__ReadTVertList, TObjectDesc, obj)
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	LOCAL_VAR(TINT, tVertIndex, 0)
+	LOCAL_VAR(REF(TMeshDesc), mshDesc, CALLF0(obj.GetMeshDesc))
+	LOCAL_VAR(TINT, numTVerts, CALLF0(mshDesc.GetNumTVerts))
+	WHILE(TRUE)
+		IF(BIT_AND(tVertIndex, 15) == 0)
+			LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), CALLF0(obj.GetObjectName)))
+			SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+		END_IF
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(token, T("*MESH_TVERT")) == 0)
+			ASSIGN(tVertIndex, CALLF0(SELF __ReadInt))
+			IF(tVertIndex < 0 OR tVertIndex >= numTVerts)
+				THROW(CALLF7(FormatMsg6, ErrTVertIdxOutOfRange, SELF __token, T("0"), INT_TO_STRING(numTVerts - 1), INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+			LOCAL_VAR(TUVVERT, uv, CALLF0(SELF __ReadUVVert))
+			CALLP2(mshDesc.SetTVert, tVertIndex, uv)
+		ELSE_IF(token == T("{"))
+			ASSIGN(level, level + 1)
+		ELSE_IF(token == T("}"))
+			ASSIGN(level, level - 1)
+		END_IF
+		IF(level == 0)
+			BREAK
+		END_IF
+	END_WHILE		
+END_MEMBER_PROC
+
+// Read list of texture faces (tag *MESH_TFACELIST)
+MEMBER_PROC_1(__ReadTFaceList, TObjectDesc, objDesc)
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	LOCAL_VAR(TINT, tFaceIndex, 0)
+	LOCAL_VAR(REF(TMeshDesc), mshDesc, CALLF0(objDesc.GetMeshDesc))
+	LOCAL_VAR(TINT, numFaces, CALLF0(mshDesc.GetNumFaces))
+	LOCAL_VAR(TINT, numTVerts, CALLF0(mshDesc.GetNumTVerts))
+	WHILE(TRUE)
+		IF(BIT_AND(tFaceIndex, 15) == 0)
+			LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), CALLF0(objDesc.GetObjectName)))
+			SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+		END_IF
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(token, T("*MESH_TFACE")) == 0)
+			ASSIGN(tFaceIndex, CALLF0(SELF __ReadInt))
+			IF(tFaceIndex < 0 OR tFaceIndex >= numFaces)
+				THROW(CALLF7(FormatMsg6, ErrFaceIdxOutOfRange, SELF __token, T("0"), INT_TO_STRING(numFaces - 1), INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+			LOCAL_VAR(TINT, tA, CALLF0(SELF __ReadInt))
+			IF(tA < 0 OR tA >= numTVerts)
+				THROW(CALLF7(FormatMsg6, ErrTVertIdxOutOfRange, SELF __token, T("0"), INT_TO_STRING(numTVerts - 1), INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+			LOCAL_VAR(TINT, tB, CALLF0(SELF __ReadInt))
+			IF(tB < 0 OR tB >= numTVerts)
+				THROW(CALLF7(FormatMsg6, ErrTVertIdxOutOfRange, SELF __token, T("0"), INT_TO_STRING(numTVerts - 1), INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+			LOCAL_VAR(TINT, tC, CALLF0(SELF __ReadInt))
+			IF(tC < 0 OR tC >= numTVerts)
+				THROW(CALLF7(FormatMsg6, ErrTVertIdxOutOfRange, SELF __token, T("0"), INT_TO_STRING(numTVerts - 1), INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF
+			CALLP2(mshDesc.SetTVFace, tFaceIndex, NEW_TVFACE(tA, tB, tC))
+		ELSE_IF(token == T("{"))
+			ASSIGN(level, level + 1)
+		ELSE_IF(token == T("}"))
+			ASSIGN(level, level - 1)
+		END_IF
+		IF(level == 0)
+			BREAK
+		END_IF
+	END_WHILE		
+END_MEMBER_PROC
+
+// Read mesh (tag *MESH)
+MEMBER_PROC_1(__ReadMesh, TObjectDesc, objDesc)
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	LOCAL_VAR(TINT, timeValue, 0)
+	LOCAL_VAR(REF(TMeshDesc), mshDesc, CALLF0(objDesc.GetMeshDesc))
+	WHILE(TRUE)
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(token, T("*TIMEVALUE")) == 0)
+			ASSIGN(timeValue, CALLF0(SELF __ReadInt))
+		ELSE_IF(STRICMP(token, T("*MESH_NUMVERTEX")) == 0)
+			CALLP1(mshDesc.SetNumVerts, CALLF0(SELF __ReadInt))
+		ELSE_IF(STRICMP(token, T("*MESH_NUMFACES")) == 0)
+			CALLP1(mshDesc.SetNumFaces, CALLF0(SELF __ReadInt))
+		ELSE_IF(STRICMP(token, T("*MESH_VERTEX_LIST")) == 0)
+			CALLP1(SELF __ReadVertexList, objDesc)
+		ELSE_IF(STRICMP(token, T("*MESH_FACE_LIST")) == 0)
+			CALLP1(SELF __ReadFaceList, objDesc)
+		ELSE_IF(STRICMP(token, T("*MESH_NUMTVERTEX")) == 0)
+			CALLP1(mshDesc.SetNumTVerts, CALLF0(SELF __ReadInt))
+		ELSE_IF(STRICMP(token, T("*MESH_TVERTLIST")) == 0)
+			CALLP1(SELF __ReadTVertList, objDesc)
+		ELSE_IF(STRICMP(token, T("*MESH_NUMTVFACES")) == 0)
+			CALLP1(mshDesc.SetNumTVFaces, CALLF0(SELF __ReadInt))
+		ELSE_IF(STRICMP(token, T("*MESH_TFACELIST")) == 0)
+			CALLP1(SELF __ReadTFaceList, objDesc)
+		ELSE_IF(token == T("{"))
+			ASSIGN(level, level + 1)
+		ELSE_IF(token == T("}"))
+			ASSIGN(level, level - 1)
+		END_IF
+		IF(level == 0)
+			BREAK
+		END_IF
+	END_WHILE
+END_MEMBER_PROC
+
+// Read skeleton animation
+MEMBER_PROC_1(__ReadTMAnimation, TObjectDesc, objDesc)
+	ASSIGN(SELF __numTMAnimations, SELF __numTMAnimations + 1)
+	
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	LOCAL_VAR(REF(TPosTrack), posTrack, CALLF0(objDesc.GetPosTrack))
+	LOCAL_VAR(REF(TRotTrack), rotTrack, CALLF0(objDesc.GetRotTrack))
+	
+	LOCAL_VAR(TINT, numSamples, SELF __animEndFrame - SELF __animStartFrame + 1)
+	CALLP1(posTrack.SetNumSamples, numSamples)
+	CALLP1(rotTrack.SetNumSamples, numSamples)
+	
+	WHILE(TRUE)
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(token, T("*NODE_NAME")) == 0)
+			LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), CALLF0(objDesc.GetObjectName)))
+			SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+		ELSE_IF(STRICMP(token, T("*CONTROL_POS_TRACK")) == 0)
+			CALLP1(SELF __ReadCertainToken, T("{"))
+			CALLP1(posTrack.SetNumSamples, numSamples)
+			FOR(i, 0, numSamples)
+				CALLP1(SELF __ReadCertainToken, T("*CONTROL_POS_SAMPLE"))
+				LOCAL_VAR(TINT, tick, CALLF0(SELF __ReadInt))
+				CALLP2(posTrack.SetSamplePos, i, CALLF0(SELF __ReadPoint3))
+			END_FOR
+			CALLP1(SELF __ReadCertainToken, T("}"))
+		ELSE_IF(STRICMP(token, T("*CONTROL_ROT_TRACK")) == 0)
+			CALLP1(SELF __ReadCertainToken, T("{"))
+			CALLP1(rotTrack.SetNumSamples, numSamples)
+			FOR(i, 0, numSamples)
+				CALLP1(SELF __ReadCertainToken, T("*CONTROL_ROT_SAMPLE"))
+				LOCAL_VAR(TINT, tick, CALLF0(SELF __ReadInt))
+				CALLP2(rotTrack.SetSampleAxis, i, CALLF0(SELF __ReadPoint3))
+				CALLP2(rotTrack.SetSampleAngle, i, CALLF0(SELF __ReadFloat))
+			END_FOR
+			CALLP1(SELF __ReadCertainToken, T("}"))
+		ELSE_IF(token == T("{"))
+			ASSIGN(level, level + 1)
+		ELSE_IF(token == T("}"))
+			ASSIGN(level, level - 1)
+		END_IF
+		IF(level == 0)
+			BREAK
+		END_IF
+	END_WHILE
+END_MEMBER_PROC
+
+// Read morph mesh animation (tag *MESH_ANIMATION)
+MEMBER_PROC_1(__ReadMeshAnimation, TObjectDesc, objDesc)
+	ASSIGN(SELF __numMeshAnimations, SELF __numMeshAnimations + 1)
+
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	LOCAL_VAR(REF(TMorphTrack), morphTrack, CALLF0(objDesc.GetMorphTrack))
+	
+	LOCAL_VAR(TINT, numSamples, SELF __animEndFrame - SELF __animStartFrame + 1)
+	CALLP1(morphTrack.SetNumSamples, numSamples)
+	
+	CALLP1(SELF __ReadCertainToken, T("{"))
+	FOR(i, 0, numSamples)
+		LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), CALLF0(objDesc.GetObjectName)))
+		SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+		CALLP1(SELF __ReadCertainToken, T("*MESH"))
+		LOCAL_VAR(TINT, numVerts, 0)
+		WHILE(TRUE)
+			ASSIGN(token, CALLF0(SELF __ReadToken))
+			IF(STRICMP(token, T("*MESH_NUMVERTEX")) == 0)
+				ASSIGN(numVerts, CALLF0(SELF __ReadInt))
+			ELSE_IF(STRICMP(token, T("*MESH_VERTEX_LIST")) == 0)
+				CALLP1(SELF __ReadCertainToken, T("{"))
+				LOCAL_VAR(TARRAY(TPOINT3), verts, EMPTY_ARRAY(TPOINT3))
+				FOR(j, 0, numVerts)
+					CALLP1(SELF __ReadCertainToken, T("*MESH_VERTEX"))
+					LOCAL_VAR(TINT, vertIdx, CALLF0(SELF __ReadInt))
+					LOCAL_VAR(TPOINT3, pos, CALLF0(SELF __ReadPoint3))
+					APPEND(verts, pos)
+				END_FOR
+				CALLP2(morphTrack.SetSampleVerts, i, verts)
+				CALLP1(SELF __ReadCertainToken, T("}"))
+			ELSE_IF(token == T("{"))
+				ASSIGN(level, level + 1)
+			ELSE_IF(token == T("}"))
+				ASSIGN(level, level - 1)
+			END_IF
+			IF(level == 0)
+				BREAK
+			END_IF
+		END_WHILE
+	END_FOR
+	CALLP1(SELF __ReadCertainToken, T("}"))
+END_MEMBER_PROC
+
+// Read single object (tag *HELPEROBJECT or *GEOMOBJECT)
+MEMBER_PROC_0(__ReadGeomObject)
+	LOCAL_VAR(TObjectDesc, objDesc, CALLF0(NewObjectDesc))
+	LOCAL_VAR(TBOOL, skipObj, FALSE)
+	LOCAL_VAR(TINT, level, 0)
+	LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+	WHILE(TRUE)
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(token, T("*NODE_NAME")) == 0)
+			LOCAL_VAR(TSTRING, objName, CALLF0(SELF __ReadString))
+			CALLP1(objDesc.SetObjectName, objName)
+			LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), objName))
+			SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+			FOR(j, 0, SIZE(SELF __objectsDesc))
+				IF(STRICMP(CALLF0(GET_ELEM(SELF __objectsDesc, j).GetObjectName), objName) == 0)
+					THROW(CALLF5(FormatMsg4, ErrObjectAlreadyExists, SELF __token, INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+				END_IF
+			END_FOR
+			LOCAL_VAR(TNameAnalyzer, na, CALLF1(AnalyzeName, objName))
+			LOCAL_VAR(TINT, curObjType, CALLF0(na.GetObjectType))
+			CALLP1(objDesc.SetObjectType, curObjType)
+			IF(curObjType == OBJTYPE_BONE)
+				ASSIGN(SELF __numBones, SELF __numBones + 1)
+				IF(STRICMP(objName, T("Bip01")) == 0)
+					ASSIGN(SELF __bip01Found, TRUE)
+				END_IF
+			ELSE_IF(curObjType == OBJTYPE_SLOT)
+				ASSIGN(SELF __numSlots, SELF __numSlots + 1)
+			ELSE_IF(curObjType == OBJTYPE_MESH)
+				ASSIGN(SELF __numMeshes, SELF __numMeshes + 1)
+			ELSE
+				ASSIGN(skipObj, TRUE)
+			END_IF
+		ELSE_IF(STRICMP(token, T("*NODE_PARENT")) == 0)
+			LOCAL_VAR(TSTRING, parentName, CALLF0(SELF __ReadString))
+			LOCAL_VAR(TBOOL, parentFound, FALSE)
+			FOR(j, 0, SIZE(SELF __objectsDesc))
+				IF(STRICMP(CALLF0(GET_ELEM(SELF __objectsDesc, j).GetObjectName), parentName) == 0)
+					ASSIGN(parentFound, TRUE)
+					BREAK
+				END_IF
+			END_FOR
+			IF(NOT(parentFound))
+				ASSIGN(parentName, EMPTY_STRING)
+			END_IF
+			CALLP1(objDesc.SetParentName, parentName)
+		ELSE_IF(STRICMP(token, T("*NODE_TM")) == 0)
+			CALLP1(SELF __ReadNodeTM, objDesc)
+		ELSE_IF(STRICMP(token, T("*MATERIAL_REF")) == 0)
+			CALLP1(SELF __ReadMaterialRef, objDesc)
+		ELSE_IF(STRICMP(token, T("*MESH")) == 0)
+			CALLP1(SELF __ReadMesh, objDesc)
+		ELSE_IF(STRICMP(token, T("*MESH_SOFTSKIN")) == 0)
+			CALLP1(SELF __ReadMesh, objDesc)
+		ELSE_IF(STRICMP(token, T("*TM_ANIMATION")) == 0)
+			CALLP1(SELF __ReadTMAnimation, objDesc)
+		ELSE_IF(STRICMP(token, T("*MESH_ANIMATION")) == 0)
+			CALLP1(SELF __ReadMeshAnimation, objDesc)
+		ELSE_IF(token == T("{"))
+			ASSIGN(level, level + 1)
+		ELSE_IF(token == T("}"))
+			ASSIGN(level, level - 1)
+		END_IF
+		IF(level == 0)
+			BREAK
+		END_IF
+	END_WHILE
+	IF(NOT(skipObj))
+		APPEND(SELF __objectsDesc, objDesc)
+	END_IF
+END_MEMBER_PROC
+
+// Read soft skin weights (tag *MESH_SOFTSKINVERTS)
+MEMBER_PROC_0(__ReadSoftSkinVerts)
+	ASSIGN(SELF __numSoftSkins, SELF __numSoftSkins + 1)
+	CALLP1(SELF __ReadCertainToken, T("{"))
+	LOCAL_VAR(TSTRING, objName, CALLF0(SELF __ReadLine))
+	LOCAL_VAR(TINT, objIndex, -1)
+	FOR(j, 0, SIZE(SELF __objectsDesc))
+		IF(STRICMP(CALLF0(GET_ELEM(SELF __objectsDesc, j).GetObjectName), objName) == 0)
+			ASSIGN(objIndex, j)
+			BREAK
+		END_IF
+	END_FOR	
+	IF(objIndex == -1)
+		THROW(CALLF5(FormatMsg4, ErrObjectNotFound, SELF __token, INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+	END_IF	
+	LOCAL_VAR(REF(TObjectDesc), objDesc, GET_ELEM(SELF __objectsDesc, objIndex))
+	LOCAL_VAR(REF(TSoftSkinVerts), svs, CALLF0(objDesc.GetSoftSkinVerts))
+
+	LOCAL_VAR(TINT, numVerts, CALLF0(SELF __ReadInt))
+	CALLP1(svs.SetNumVerts, numVerts)
+	FOR(i, 0, numVerts)
+		IF(BIT_AND(i, 15) == 0)
+			LOCAL_VAR(TSTRING, caption, T("Reading skin weights"))
+			SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+		END_IF
+		LOCAL_VAR(REF(TSoftSkinVert), sv, CALLF1(svs.GetVert, i))
+		LOCAL_VAR(TINT, numWeights, CALLF0(SELF __ReadInt))
+		CALLP1(sv.SetNumWeights, numWeights)
+		FOR(j, 0, numWeights)
+			ASSIGN(objName, CALLF0(SELF __ReadString))
+			ASSIGN(objIndex, -1)
+			FOR(k, 0, SIZE(SELF __objectsDesc))
+				IF(STRICMP(CALLF0(GET_ELEM(SELF __objectsDesc, k).GetObjectName), objName) == 0)
+					ASSIGN(objIndex, k)
+					BREAK
+				END_IF
+			END_FOR	
+			IF(objIndex == -1)
+				THROW(CALLF5(FormatMsg4, ErrObjectNotFound, SELF __token, INT_TO_STRING(SELF __tokenLine), INT_TO_STRING(SELF __tokenColumn), SELF __filename))
+			END_IF	
+			CALLP2(sv.SetBoneName, j, objName)
+			CALLP2(sv.SetWeight, j, CALLF0(SELF __ReadFloat))
+		END_FOR
+	END_FOR
+	CALLP1(SELF __ReadCertainToken, T("}"))
+END_MEMBER_PROC
+
+// Calculate type of the loaded ASC file;
+// this functions assigns member variable __ascType to one of the constants
+// ASCTYPE_STATIC_MESH, ASCTYPE_DYNAMIC_MESH, ASCTYPE_DYNAMIC_ANIM,
+// ASCTYPE_MORPH_MESH, ASCTYPE_MORPH_ANIM
+MEMBER_PROC_0(__CalcAscType)
+	IF(SELF __numMeshAnimations != 0)
+		ASSIGN(SELF __ascType, ASCTYPE_MORPH_ANIM)
+	ELSE_IF((SELF __numMeshes == 1) AND (SELF __numBones == 0) AND (SELF __numSlots == 0))
+		ASSIGN(SELF __ascType, ASCTYPE_MORPH_MESH)
+	ELSE_IF(SELF __numTMAnimations != 0)
+		ASSIGN(SELF __ascType, ASCTYPE_DYNAMIC_ANIM)
+	ELSE_IF((SELF __numSoftSkins != 0) OR (SELF __bip01Found))
+		ASSIGN(SELF __ascType, ASCTYPE_DYNAMIC_MESH)
+	ELSE
+		ASSIGN(SELF __ascType, ASCTYPE_STATIC_MESH)
+	END_IF
+END_MEMBER_PROC
+
+// Set scale coefficient
+MEMBER_PROC_1(__SetSpaceTransform, TSpaceTransform, spaceTransform)
+	LOCAL_VAR(TINT, setupUnit, CALLF0(spaceTransform.GetSetupUnit))
+	IF(setupUnit == SETUPUNIT_INCH)
+		SET_SYSTEM_UNIT(UNITTYPE_INCH)
+	ELSE_IF(setupUnit == SETUPUNIT_FOOT)
+		SET_SYSTEM_UNIT(UNITTYPE_FOOT)
+	ELSE_IF(setupUnit == SETUPUNIT_MILE)
+		SET_SYSTEM_UNIT(UNITTYPE_MILE)
+	ELSE_IF(setupUnit == SETUPUNIT_MILLIMETER)
+		SET_SYSTEM_UNIT(UNITTYPE_MILLIMETER)
+	ELSE_IF(setupUnit == SETUPUNIT_CENTIMETER)
+		SET_SYSTEM_UNIT(UNITTYPE_CENTIMETER)
+	ELSE_IF(setupUnit == SETUPUNIT_METER)
+		SET_SYSTEM_UNIT(UNITTYPE_METER)
+	ELSE_IF(setupUnit == SETUPUNIT_KILOMETER)
+		SET_SYSTEM_UNIT(UNITTYPE_KILOMETER)
+	END_IF
+	ASSIGN(SELF __spaceTransform, spaceTransform)
+	ASSIGN(SELF __scaleCoef, CALLF0(spaceTransform.GetSystemUnitsPerFileUnit))
+END_MEMBER_PROC
+
+// Set model prefix
+MEMBER_PROC_1(__SetModelPrefix, TSTRING, modelPrefix)
+	ASSIGN(SELF __modelPrefix, modelPrefix)
+END_MEMBER_PROC
+
+// Set skin type
+MEMBER_PROC_1(__SetSkinType, REF(TSTRING), skinType)
+	ASSIGN(SELF __skinType, skinType)
+END_MEMBER_PROC
+
+// Create materials
+MEMBER_PROC_0(__CreateMaterials)
+	FOR(i, 0, SIZE(SELF __materialsDesc))
+		LOCAL_VAR(REF(TARRAY(TMaterialDesc)), mtlDescArray, GET_ELEM(SELF __materialsDesc, i))
+		LOCAL_VAR(TARRAY(TMATERIAL), mtlArray, EMPTY_ARRAY(TMATERIAL))
+		FOR(j, 0, SIZE(mtlDescArray))
+			LOCAL_VAR(REF(TMaterialDesc), mtlDesc, GET_ELEM(mtlDescArray, j))
+			LOCAL_VAR(REF(TSTRING), mtlName, CALLF0(mtlDesc.GetMaterialName))
+			LOCAL_VAR(TSTRING, caption, T("Creating materials"))
+			SHOW_PROGRESS_BAR(caption, 100 * i / SIZE(SELF __materialsDesc))
+			LOCAL_VAR(TMATERIAL, mtl, NEW_MATERIAL(mtlName))
+			SET_DIFFUSE_COLOR(mtl, CALLF0(mtlDesc.GetDiffuseColor))
+			SET_DIFFUSE_MAP_FILENAME(mtl, CALLF0(mtlDesc.GetDiffuseMapFilename))
+			APPEND(mtlArray, mtl)
+		END_FOR
+		APPEND(SELF __impMaterials, mtlArray)
+	END_FOR
+END_MEMBER_PROC
+
+// Find object in 3D scene by name, at first find among imported objects
+MEMBER_FUNC_1(TOBJECT, __FindObjectByName, TSTRING, name)
+	FOR(i, 0, SIZE(SELF __impObjectNames))
+		IF(STRICMP(GET_ELEM(SELF __impObjectNames, i), name) == 0)
+			RETURN_VAL(GET_ELEM(SELF __impObjects, i))
+		END_IF
+	END_FOR
+	RETURN_VAL(FIND_OBJECT_BY_NAME(SELF __modelPrefix + name))
+END_MEMBER_FUNC
+
+// Quess bone color
+MEMBER_FUNC_1(TCOLOR, __QuessBoneColor, TObjectDesc, objDesc)
+	LOCAL_VAR(TSTRING, objName, CALLF0(objDesc.GetObjectName))
+	LOCAL_VAR(TINT, numChildren, 0)
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		IF(CALLF0(GET_ELEM(SELF __objectsDesc, i).GetParentName) == objName)
+			ASSIGN(numChildren, numChildren + 1)
+		END_IF
+	END_FOR
+				
+	LOCAL_VAR(TINT, r, 127)
+	LOCAL_VAR(TINT, g, 127)
+	LOCAL_VAR(TINT, b, 127)
+	
+	IF(STRICMP(SUBSTR(objName, 0, 7), T("Bip01 R")) == 0)
+		IF(numChildren == 0)
+			ASSIGN(r, 113)
+			ASSIGN(g, 134)
+			ASSIGN(b, 6)
+		ELSE
+			ASSIGN(r, 6)
+			ASSIGN(g, 134)
+			ASSIGN(b, 6)
+		END_IF
+	ELSE_IF(STRICMP(SUBSTR(objName, 0, 7), T("Bip01 L")) == 0)
+		IF(numChildren == 0)
+			ASSIGN(r, 134)
+			ASSIGN(g, 6)
+			ASSIGN(b, 6)
+		ELSE
+			ASSIGN(r, 28)
+			ASSIGN(g, 28)
+			ASSIGN(b, 177)
+		END_IF
+	ELSE_IF((STRICMP(objName, T("Bip01")) == 0) OR (STRICMP(objName, T("Bip01 Head")) == 0))
+		ASSIGN(r, 88)
+		ASSIGN(g, 143)
+		ASSIGN(b, 225)
+	ELSE_IF((STRICMP(objName, T("Bip01 Pelvis")) == 0) OR (STRICMP(objName, T("Bip01 Tail")) == 0))
+		ASSIGN(r, 224)
+		ASSIGN(g, 198)
+		ASSIGN(b, 87)
+	ELSE_IF((STRICMP(SUBSTR(objName, 0, 11), T("Bip01 Spine")) == 0) OR (STRICMP(SUBSTR(objName, 0, 10), T("Bip01 Neck")) == 0))
+		ASSIGN(r, 8)
+		ASSIGN(g, 110)
+		ASSIGN(b, 134)
+	END_IF
+	RETURN_VAL(NEW_COLOR(r / 255., g / 255., b / 255.))
+END_MEMBER_FUNC
+
+// Calculate maximum distance to child bone object in the specified direction
+MEMBER_FUNC_2(TFLOAT, __MaxDistToChild, TObjectDesc, objDesc, TPOINT3, dir)
+	LOCAL_VAR(TMATRIX3, tm, CALLF0(objDesc.GetTransform))
+	LOCAL_VAR(TPOINT3, pos, GET_ROW3(tm))
+	LOCAL_VAR(TFLOAT, dirLen, VECLEN(dir))
+	LOCAL_VAR(TFLOAT, dist, 0)
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		LOCAL_VAR(REF(TObjectDesc), childDesc, GET_ELEM(SELF __objectsDesc, i))
+		IF(CALLF0(childDesc.GetParentName) == CALLF0(objDesc.GetObjectName))
+			IF(CALLF0(childDesc.GetObjectType) == OBJTYPE_BONE)
+				LOCAL_VAR(TMATRIX3, childTM, CALLF0(childDesc.GetTransform))
+				LOCAL_VAR(TPOINT3, childPos, GET_ROW3(childTM))
+				LOCAL_VAR(TFLOAT, h, DOTPROD(dir, childPos - pos) / dirLen)
+				IF(dist < h)
+					ASSIGN(dist, h)
+				END_IF
+			END_IF
+		END_IF
+	END_FOR
+	RETURN_VAL(dist)
+END_MEMBER_FUNC
+
+// Calculate bone's dimensions
+MEMBER_PROC_2(__CalcBoneBoundBox, TObjectDesc, objDesc, TINT, mode)
+	
+	LOCAL_VAR(TFLOAT, defaultBoneSize, 10)
+	IF(mode == 1)
+		ASSIGN(SELF __boneBoundBoxMinPoint, NEW_POINT3(-defaultBoneSize/2, -defaultBoneSize/2, -defaultBoneSize/2))
+		ASSIGN(SELF __boneBoundBoxMaxPoint, NEW_POINT3(defaultBoneSize/2, defaultBoneSize/2, defaultBoneSize/2))
+		
+	ELSE_IF(mode == 2)
+		LOCAL_VAR(TMATRIX3, tm, CALLF0(objDesc.GetTransform))
+		LOCAL_VAR(TPOINT3, dir_x, GET_ROW0(tm))
+		LOCAL_VAR(TPOINT3, dir_y, GET_ROW1(tm))
+		LOCAL_VAR(TPOINT3, dir_z, GET_ROW2(tm))
+		
+		LOCAL_VAR(TFLOAT, along_x, CALLF2(SELF __MaxDistToChild, objDesc, dir_x))
+		LOCAL_VAR(TFLOAT, along_y, CALLF2(SELF __MaxDistToChild, objDesc, dir_y))
+		LOCAL_VAR(TFLOAT, along_z, CALLF2(SELF __MaxDistToChild, objDesc, dir_z))
+		LOCAL_VAR(TFLOAT, opposite_x, 0)
+		LOCAL_VAR(TFLOAT, opposite_y, CALLF2(SELF __MaxDistToChild, objDesc, -dir_y))
+		LOCAL_VAR(TFLOAT, opposite_z, CALLF2(SELF __MaxDistToChild, objDesc, -dir_z))
+		
+		IF(along_x < defaultBoneSize)
+			ASSIGN(along_x, defaultBoneSize)
+		END_IF
+		IF(along_y < defaultBoneSize / 2)
+			ASSIGN(along_y, defaultBoneSize / 2)
+		END_IF
+		IF(along_z < defaultBoneSize / 2)
+			ASSIGN(along_z, defaultBoneSize / 2)
+		END_IF
+		IF(opposite_y < defaultBoneSize / 2)
+			ASSIGN(opposite_y, defaultBoneSize / 2)
+		END_IF
+		IF(opposite_z < defaultBoneSize / 2)
+			ASSIGN(opposite_z, defaultBoneSize / 2)
+		END_IF
+		
+		ASSIGN(SELF __boneBoundBoxMinPoint, NEW_POINT3(0, -opposite_y, -opposite_z))
+		ASSIGN(SELF __boneBoundBoxMaxPoint, NEW_POINT3(along_x, along_y, along_z))
+	END_IF
+
+	ASSIGN(SELF __boneBoundBoxMinPoint, SELF __boneBoundBoxMinPoint * SELF __scaleCoef)
+	ASSIGN(SELF __boneBoundBoxMaxPoint, SELF __boneBoundBoxMaxPoint * SELF __scaleCoef)
+END_MEMBER_PROC
+
+// Create bones
+MEMBER_PROC_1(__CreateBones, TINT, mode)
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		LOCAL_VAR(REF(TObjectDesc), objDesc, GET_ELEM(SELF __objectsDesc, i))
+		LOCAL_VAR(TSTRING, objName, CALLF0(objDesc.GetObjectName))
+		IF(CALLF0(objDesc.GetObjectType) == OBJTYPE_BONE)
+			LOCAL_VAR(TSTRING, caption, T("Creating bones"))
+			SHOW_PROGRESS_BAR(caption, 100 * i / SIZE(SELF __objectsDesc))
+			LOCAL_VAR(TSTRING, newObjName, SELF __modelPrefix + objName)
+			LOCAL_VAR(TSTRING, parentName, CALLF0(objDesc.GetParentName))
+			LOCAL_VAR(TOBJECT, parentBone, ROOT_OBJECT)
+			IF(parentName != EMPTY_STRING)
+				ASSIGN(parentBone, CALLF1(SELF __FindObjectByName, parentName))
+				IF(parentBone == INVALID_OBJECT)
+					ASSIGN(parentBone, ROOT_OBJECT)
+				END_IF
+			END_IF
+			CALLP2(SELF __CalcBoneBoundBox, objDesc, mode)
+			LOCAL_VAR(TOBJECT, obj, NEW_BONE_OBJECT(newObjName, parentBone, SELF __boneBoundBoxMinPoint, SELF __boneBoundBoxMaxPoint, SELF __skinType))
+			LOCAL_VAR(TMATRIX3, tm, CALLF0(objDesc.GetTransform))
+			SET_ROW3(tm, GET_ROW3(tm) * SELF __scaleCoef)
+			SET_TRANSFORM(obj, tm)
+			LOCAL_VAR(TCOLOR, clr, CALLF1(SELF __QuessBoneColor, objDesc))
+			SET_WIRE_COLOR(obj, clr)
+			APPEND(SELF __impObjects, obj)
+			APPEND(SELF __impObjectNames, objName)
+		END_IF
+	END_FOR	
+END_MEMBER_PROC
+
+// Make octahedron with the specified distance from its center
+MEMBER_PROC_2(__MakeOctahedronMesh, TOBJECT, obj, TFLOAT, a)
+	LOCAL_VAR(TMESH, msh, GET_MESH(obj))
+	SET_NUM_VERTS(msh, 6)
+	SET_VERT(msh, 0, NEW_POINT3(0, 0, a))
+	SET_VERT(msh, 1, NEW_POINT3(a, 0, 0))
+	SET_VERT(msh, 2, NEW_POINT3(0, a, 0))
+	SET_VERT(msh, 3, NEW_POINT3(-a, 0, 0))
+	SET_VERT(msh, 4, NEW_POINT3(0, -a, 0))
+	SET_VERT(msh, 5, NEW_POINT3(0, 0, -a))
+	
+	SET_NUM_FACES(msh, 8)
+	SET_FACE(msh, 0, NEW_FACE(0, 1, 2))
+	SET_FACE(msh, 1, NEW_FACE(0, 2, 3))
+	SET_FACE(msh, 2, NEW_FACE(0, 3, 4))
+	SET_FACE(msh, 3, NEW_FACE(0, 4, 1))
+	SET_FACE(msh, 4, NEW_FACE(5, 2, 1))
+	SET_FACE(msh, 5, NEW_FACE(5, 3, 2))
+	SET_FACE(msh, 6, NEW_FACE(5, 4, 3))
+	SET_FACE(msh, 7, NEW_FACE(5, 1, 4))
+
+	FOR(i, 0, GET_NUM_FACES(msh))
+		FOR(j, 0, 3)
+			SET_EDGE_VIS(msh, i, j, TRUE)
+		END_FOR
+	END_FOR
+	LOCAL_VAR(TARRAY(TOBJECT), unusedArray, UPDATE_MESH(msh))
+END_MEMBER_PROC
+
+// Create slots
+MEMBER_PROC_0(__CreateSlots)
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		LOCAL_VAR(REF(TObjectDesc), objDesc, GET_ELEM(SELF __objectsDesc, i))
+		LOCAL_VAR(TSTRING, objName, CALLF0(objDesc.GetObjectName))
+		IF(CALLF0(objDesc.GetObjectType) == OBJTYPE_SLOT)
+			LOCAL_VAR(TSTRING, caption, T("Creating slots"))
+			SHOW_PROGRESS_BAR(caption, 100 * i / SIZE(SELF __objectsDesc))
+			LOCAL_VAR(TSTRING, newObjName, SELF __modelPrefix + objName)
+			LOCAL_VAR(TOBJECT, obj, NEW_MESH_OBJECT(newObjName))
+			LOCAL_VAR(TSTRING, parentName, CALLF0(objDesc.GetParentName))
+			IF(parentName != EMPTY_STRING)
+				LOCAL_VAR(TOBJECT, parentObj, CALLF1(SELF __FindObjectByName, parentName))
+				IF(parentObj != INVALID_OBJECT)
+					SET_PARENT(obj, parentObj)
+				END_IF
+			END_IF
+			LOCAL_VAR(TMATRIX3, tm, CALLF0(objDesc.GetTransform))
+			SET_ROW3(tm, GET_ROW3(tm) * SELF __scaleCoef)
+			SET_TRANSFORM(obj, tm)
+			CALLP2(SELF __MakeOctahedronMesh, obj, INT_TO_FLOAT(5) * SELF __scaleCoef)
+			APPEND(SELF __impObjects, obj)
+			APPEND(SELF __impObjectNames, objName)
+		END_IF
+	END_FOR	
+END_MEMBER_PROC
+
+// Create meshes
+MEMBER_PROC_0(__CreateMeshes)
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		LOCAL_VAR(REF(TObjectDesc), objDesc, GET_ELEM(SELF __objectsDesc, i))
+		LOCAL_VAR(TSTRING, objName, CALLF0(objDesc.GetObjectName))
+		IF(CALLF0(objDesc.GetObjectType) == OBJTYPE_MESH)
+			LOCAL_VAR(TSTRING, caption, T("Creating meshes"))
+			SHOW_PROGRESS_BAR(caption, 100 * i / SIZE(SELF __objectsDesc))
+			LOCAL_VAR(TSTRING, newObjName, SELF __modelPrefix + objName)
+			IF(FIND_OBJECT_BY_NAME(newObjName) != INVALID_OBJECT)
+				ASSIGN(newObjName, UNIQUE_OBJECT_NAME(newObjName))
+			END_IF
+			LOCAL_VAR(TOBJECT, obj, NEW_MESH_OBJECT(newObjName))
+			LOCAL_VAR(TSTRING, parentName, CALLF0(objDesc.GetParentName))
+			IF(parentName != EMPTY_STRING)
+				LOCAL_VAR(TOBJECT, parentObj, CALLF1(SELF __FindObjectByName, parentName))
+				IF(parentObj != INVALID_OBJECT)
+					SET_PARENT(obj, parentObj)
+				END_IF
+			END_IF
+			LOCAL_VAR(TMATRIX3, tm, CALLF0(objDesc.GetTransform))
+			SET_ROW3(tm, GET_ROW3(tm) * SELF __scaleCoef)
+			SET_TRANSFORM(obj, tm)
+			LOCAL_VAR(REF(TMeshDesc), mshDesc, CALLF0(objDesc.GetMeshDesc))
+			LOCAL_VAR(TMESH, msh, GET_MESH(obj))
+			LOCAL_VAR(TINT, numVerts, CALLF0(mshDesc.GetNumVerts))
+			SET_NUM_VERTS(msh, numVerts)
+			FOR(j, 0, numVerts)
+				LOCAL_VAR(TPOINT3, pt, CALLF1(mshDesc.GetVert, j))
+				ASSIGN(pt, pt * SELF __scaleCoef)
+				SET_VERT(msh, j, pt)
+			END_FOR
+			LOCAL_VAR(TINT, numFaces, CALLF0(mshDesc.GetNumFaces))
+			SET_NUM_FACES(msh, numFaces)
+			LOCAL_VAR(TINT, matRef, CALLF0(objDesc.GetMaterialRef))
+			FOR(j, 0, numFaces)
+				SET_FACE(msh, j, CALLF1(mshDesc.GetFace, j))
+				SET_FACE_SMOOTH_GROUP(msh, j, CALLF1(mshDesc.GetFaceSmoothGroup, j))
+				SET_EDGE_VIS(msh, j, 0, CALLF2(mshDesc.GetEdgeVis, j, 0))
+				SET_EDGE_VIS(msh, j, 1, CALLF2(mshDesc.GetEdgeVis, j, 1))
+				SET_EDGE_VIS(msh, j, 2, CALLF2(mshDesc.GetEdgeVis, j, 2))
+				IF((0 <= matRef) AND (matRef < SIZE(SELF __impMaterials)))
+					LOCAL_VAR(REF(TARRAY(TMATERIAL)), subMtls, GET_ELEM(SELF __impMaterials, matRef))
+					LOCAL_VAR(TINT, matIndex, CALLF1(mshDesc.GetFaceMatID, j))
+					LOCAL_VAR(TINT, numSubMtls, SIZE(subMtls))
+					IF(numSubMtls > 0)
+						IF(matIndex < 0)
+							ASSIGN(matIndex, 0)
+						END_IF
+						WHILE(matIndex >= numSubMtls)
+							ASSIGN(matIndex, matIndex - numSubMtls)
+						END_WHILE
+						LOCAL_VAR(TMATERIAL, mat, GET_ELEM(subMtls, matIndex))
+						SET_FACE_MAT(msh, j, mat)
+					END_IF
+				END_IF
+			END_FOR
+			LOCAL_VAR(TINT, numTVerts, CALLF0(mshDesc.GetNumTVerts))
+			SET_NUM_TVERTS(msh, numTVerts)
+			FOR(j, 0, numTVerts)
+				SET_TVERT(msh, j, CALLF1(mshDesc.GetTVert, j))
+			END_FOR
+			LOCAL_VAR(TINT, numTVFaces, CALLF0(mshDesc.GetNumTVFaces))
+			SET_NUM_TVFACES(msh, numTVFaces)
+			FOR(j, 0, numTVFaces)
+				SET_TVFACE(msh, j, CALLF1(mshDesc.GetTVFace, j))
+			END_FOR
+			LOCAL_VAR(TARRAY(TOBJECT), unusedArray, UPDATE_MESH(msh))
+			APPEND(SELF __impObjects, obj)
+			APPEND(SELF __impObjectNames, objName)
+		END_IF
+	END_FOR	
+END_MEMBER_PROC
+
+// Load meshes for bones and slots from the "meshes/KrxImpExpSamples" folder
+MEMBER_PROC_1(__ReplaceBonesAndSlotsWithSampleMeshes, TSTRING, sampleMeshesDir)
+	HIDE_PROGRESS_BAR
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		LOCAL_VAR(REF(TObjectDesc), objDesc, GET_ELEM(SELF __objectsDesc, i))
+		LOCAL_VAR(TSTRING, objName, CALLF0(objDesc.GetObjectName))
+		IF((CALLF0(objDesc.GetObjectType) == OBJTYPE_BONE) OR (CALLF0(objDesc.GetObjectType) == OBJTYPE_SLOT))
+			LOCAL_VAR(TOBJECT, obj, CALLF1(SELF __FindObjectByName, objName))
+			IF(obj != INVALID_OBJECT)
+				LOCAL_VAR(TSTRING, filename3ds, sampleMeshesDir + objName + T(".3ds"))
+				IF(FILE_EXISTS(filename3ds))
+					DESELECT_ALL
+					SELECT(obj)
+					CALL_IMPORTER(filename3ds, TRUE, Krx3dsImp, 0x609516fe, 0x63690b24, 1024227)
+					ASSIGN(obj, CALLF1(SELF __FindObjectByName, objName))
+					IF((obj != INVALID_OBJECT) AND (IS_MESH_OBJECT(obj)))
+						LOCAL_VAR(TFLOAT, s, SELF __scaleCoef / DEFAULT_SYSTEM_UNITS_PER_FILE_UNIT)
+						LOCAL_VAR(TMESH, msh, GET_MESH(obj))
+						FOR(j, 0, GET_NUM_VERTS(msh))
+							SET_VERT(msh, j, GET_VERT(msh, j) * s)
+						END_FOR
+						LOCAL_VAR(TARRAY(TOBJECT), unusedArray, UPDATE_MESH(msh))
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+	END_FOR
+	CALLP1(SELF __SetSpaceTransform, SELF __spaceTransform)
+END_MEMBER_PROC
+
+// Attach imported model as child to the specified object
+MEMBER_PROC_1(__LinkModelToObject, TSTRING, newParentName)
+	LOCAL_VAR(TOBJECT, newParent, FIND_OBJECT_BY_NAME(newParentName))
+	FOR(i, 0, SIZE(SELF __impObjects))
+		LOCAL_VAR(TOBJECT, obj, GET_ELEM(SELF __impObjects, i))
+		IF(obj != INVALID_OBJECT)
+			IF(GET_PARENT(obj) == ROOT_OBJECT)
+				SET_PARENT(obj, newParent)
+				SET_TRANSFORM(obj, MULMATMAT(GET_TRANSFORM(newParent), GET_TRANSFORM(obj)))
+			END_IF
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Set display properties of imported objects
+MEMBER_PROC_3(__SetDispProps, TINT, objType, REF(TSTRING), layerName, REF(TObjectDisplayProps), dispProps)
+	
+	LOCAL_VAR(TBOOL, setVisibilityIndividually, TRUE)
+	LOCAL_VAR(TBOOL, setRenderableIndividually, TRUE)
+	LOCAL_VAR(TBOOL, setBoxModeIndividually, TRUE)
+	LOCAL_VAR(TBOOL, setTransparentIndividually, TRUE)
+	
+	LOCAL_VAR(TLAYER, layer, FIND_LAYER_BY_NAME(layerName))
+	IF(layer == INVALID_LAYER)
+		ASSIGN(layer, NEW_LAYER(layerName))
+	END_IF
+	
+	IF(layer != INVALID_LAYER)
+		SET_LAYER_VISIBILITY(layer,  CALLF0(dispProps.GetVisibility))
+		SET_LAYER_RENDERABLE(layer,  CALLF0(dispProps.GetRenderable))
+		SET_LAYER_TRANSPARENT(layer, CALLF0(dispProps.GetTransparent))
+		SET_LAYER_BOX_MODE(layer,    CALLF0(dispProps.GetBoxMode))
+		ASSIGN(setVisibilityIndividually,  GET_LAYER_VISIBILITY(layer)  != CALLF0(dispProps.GetVisibility))
+		ASSIGN(setRenderableIndividually,  GET_LAYER_RENDERABLE(layer)  != CALLF0(dispProps.GetRenderable))
+		ASSIGN(setTransparentIndividually, GET_LAYER_TRANSPARENT(layer) != CALLF0(dispProps.GetTransparent))
+		ASSIGN(setBoxModeIndividually,     GET_LAYER_BOX_MODE(layer)    != CALLF0(dispProps.GetBoxMode))
+	END_IF
+	
+	FOR(i, 0, SIZE(SELF __impObjects))
+		LOCAL_VAR(TOBJECT, obj, GET_ELEM(SELF __impObjects, i))
+		LOCAL_VAR(TSTRING, objName, GET_OBJECT_NAME(obj))
+		LOCAL_VAR(TNameAnalyzer, na, CALLF1(AnalyzeName, objName))
+		IF(objType == CALLF0(na.GetObjectType))
+			IF(layer != INVALID_LAYER)
+				SET_OBJECT_LAYER(obj, layer)
+			END_IF
+			IF(setVisibilityIndividually)
+				SHOW(obj, CALLF0(dispProps.GetVisibility))
+			END_IF
+			IF(setRenderableIndividually)
+				SET_RENDERABLE(obj, CALLF0(dispProps.GetRenderable))
+			END_IF
+			IF(setTransparentIndividually)
+				SET_TRANSPARENT(obj, CALLF0(dispProps.GetTransparent))
+			END_IF
+			IF(setBoxModeIndividually)
+				SET_BOX_MODE(obj, CALLF0(dispProps.GetBoxMode))
+			END_IF
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Saves model bones' transformation matrices.
+// This function must be used before skin applying.
+MEMBER_PROC_0(__StoreModelPose)
+	ASSIGN(SELF __modelBonesAndSlots, EMPTY_ARRAY(TOBJECT))
+	ASSIGN(SELF __modelBonesAndSlotsStoredTMs, EMPTY_ARRAY(TMATRIX3))
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		LOCAL_VAR(REF(TObjectDesc), objDesc, GET_ELEM(SELF __objectsDesc, i))
+		LOCAL_VAR(TSTRING, objName, CALLF0(objDesc.GetObjectName))
+		IF((CALLF0(objDesc.GetObjectType) == OBJTYPE_BONE) OR (CALLF0(objDesc.GetObjectType) == OBJTYPE_SLOT))
+			LOCAL_VAR(TOBJECT, obj, CALLF1(SELF __FindObjectByName, objName))
+			IF(obj != INVALID_OBJECT)
+				LOCAL_VAR(TMATRIX3, tm, GET_TRANSFORM(obj))
+				APPEND(SELF __modelBonesAndSlots, obj)
+				APPEND(SELF __modelBonesAndSlotsStoredTMs, tm)
+			END_IF
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Resets bones to the initial positions.
+// (A skin must be applied to bones in initial positions.)
+// This function must be used before skin applying.
+MEMBER_PROC_0(__InitialModelPose)
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		LOCAL_VAR(REF(TObjectDesc), objDesc, GET_ELEM(SELF __objectsDesc, i))
+		LOCAL_VAR(TSTRING, objName, CALLF0(objDesc.GetObjectName))
+		IF((CALLF0(objDesc.GetObjectType) == OBJTYPE_BONE) OR (CALLF0(objDesc.GetObjectType) == OBJTYPE_SLOT))
+			LOCAL_VAR(TOBJECT, obj, CALLF1(SELF __FindObjectByName, objName))
+			IF(obj != INVALID_OBJECT)
+				LOCAL_VAR(TMATRIX3, tm, CALLF0(objDesc.GetTransform))
+				SET_ROW3(tm, GET_ROW3(tm) * SELF __scaleCoef)
+				SET_TRANSFORM(obj, tm)
+			END_IF
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Restore model bones' transformation matrices;
+// this functions moves bones to positions which were stored with function __StoreAndResetModelPose
+MEMBER_PROC_0(__RestoreModelPose)
+	FOR(i, 0, SIZE(SELF __modelBonesAndSlots))
+		LOCAL_VAR(TOBJECT, obj, GET_ELEM(SELF __modelBonesAndSlots, i))
+		LOCAL_VAR(TMATRIX3, tm, GET_ELEM(SELF __modelBonesAndSlotsStoredTMs, i))
+		SET_TRANSFORM(obj, tm)
+	END_FOR
+END_MEMBER_PROC
+
+// Apply single skin
+MEMBER_PROC_1(__ApplySingleSkin, TObjectDesc, objDesc)
+	// find mesh for applying skin to it
+	LOCAL_VAR(REF(TSTRING), objName, CALLF0(objDesc.GetObjectName))
+	LOCAL_VAR(TOBJECT, obj, CALLF1(SELF __FindObjectByName, objName))
+	
+	// make list of all weighted bones (assigned to all vertices)
+	LOCAL_VAR(TARRAY(TSTRING), allBoneNames, EMPTY_ARRAY(TSTRING))
+	LOCAL_VAR(TARRAY(TOBJECT), allBones, EMPTY_ARRAY(TOBJECT))
+	LOCAL_VAR(REF(TSoftSkinVerts), svs, CALLF0(objDesc.GetSoftSkinVerts))
+	LOCAL_VAR(TINT, numVerts, CALLF0(svs.GetNumVerts))
+	
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		LOCAL_VAR(REF(TObjectDesc), boneDesc, GET_ELEM(SELF __objectsDesc, i))
+		LOCAL_VAR(TSTRING, boneName, CALLF0(boneDesc.GetObjectName))
+		IF(CALLF0(boneDesc.GetObjectType) == OBJTYPE_BONE)
+			LOCAL_VAR(TBOOL, found, FALSE)
+			FOR(j, 0, numVerts)
+				LOCAL_VAR(REF(TSoftSkinVert), sv, CALLF1(svs.GetVert, j))
+				LOCAL_VAR(TINT, numWeights, CALLF0(sv.GetNumWeights))
+				FOR(k, 0, numWeights)
+					IF(CALLF1(sv.GetBoneName, k) == boneName)
+						ASSIGN(found, TRUE)
+						BREAK
+					END_IF
+				END_FOR
+				IF(found)
+					BREAK
+				END_IF
+			END_FOR
+			
+			IF(found)
+				LOCAL_VAR(TOBJECT, bone, CALLF1(SELF __FindObjectByName, boneName))
+				IF(bone != INVALID_OBJECT)
+					APPEND(allBoneNames, boneName)
+					APPEND(allBones, bone)
+				END_IF
+			END_IF
+		END_IF
+	END_FOR
+	
+	// make sure number of bones >= 1
+	IF(SIZE(allBones) == 0)
+		RETURN
+	END_IF
+
+	// convert triangular mesh to skin
+	CONVERT_TO_SKIN_OBJECT(obj, SELF __skinType)
+	LOCAL_VAR(TSKIN, sd, GET_SKIN(obj))
+				
+	// add bones to skin system
+	ADD_BONES_TO_SKIN(sd, allBones)
+	
+	// setup vertex weights
+	FOR(j, 0, numVerts)
+		LOCAL_VAR(TARRAY(TOBJECT), bones, EMPTY_ARRAY(TOBJECT))
+		LOCAL_VAR(TARRAY(TFLOAT), weights, EMPTY_ARRAY(TFLOAT))
+		LOCAL_VAR(REF(TSoftSkinVert), sv, CALLF1(svs.GetVert, j))
+		LOCAL_VAR(TINT, numWeights, CALLF0(sv.GetNumWeights))
+		LOCAL_VAR(TFLOAT, totalWeight, 0)
+		FOR(k, 0, numWeights)
+			LOCAL_VAR(TSTRING, boneName, CALLF1(sv.GetBoneName, k))
+			LOCAL_VAR(TFLOAT, weight, CALLF1(sv.GetWeight, k))
+			LOCAL_VAR(TOBJECT, bon, CALLF1(SELF __FindObjectByName, boneName))
+			IF(bon != INVALID_OBJECT)
+				LOCAL_VAR(TBOOL, alreadyAppended, FALSE)
+				FOR(l, 0, SIZE(bones))
+					IF(GET_ELEM(bones, l) == bon)
+						SET_ELEM(weights, l, GET_ELEM(weights, l) + weight)
+						ASSIGN(alreadyAppended, TRUE)
+					END_IF
+				END_FOR
+				IF(NOT(alreadyAppended) AND (weight != 0))
+					APPEND(bones, bon)
+					APPEND(weights, weight)
+				END_IF
+				ASSIGN(totalWeight, totalWeight + weight)
+			END_IF
+		END_FOR
+		// normalize vertex weights
+		ASSIGN(numWeights, SIZE(bones))
+		FOR(k, 0, numWeights)
+			SET_ELEM(weights, k, GET_ELEM(weights, k) / totalWeight)
+		END_FOR
+		SET_VERTEX_WEIGHTS(sd, j, bones, weights)
+	END_FOR
+END_MEMBER_PROC
+
+// Apply all loaded skins
+MEMBER_PROC_0(__ApplySkin)
+ 	// show single label in progress bar for entire weighting;
+	// I could not make suitable progress bar here because
+	// changing of progress while 3ds max is creating the "Skin" modifier produces crash.
+	LOCAL_VAR(TSTRING, caption, T("Applying skin"))
+	SHOW_PROGRESS_BAR(caption, 99)
+
+	// Applying skin for separate objects
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		LOCAL_VAR(REF(TObjectDesc), objDesc, GET_ELEM(SELF __objectsDesc, i))
+		IF((CALLF0(CALLF0(objDesc.GetSoftSkinVerts).GetNumVerts) != 0) AND (CALLF0(objDesc.GetObjectType) == OBJTYPE_MESH))
+			CALLP1(SELF __ApplySingleSkin, objDesc)
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Set time transformation
+MEMBER_PROC_1(__SetTimeTransform, TTimeTransform, timeTransform)
+	ASSIGN(SELF __timeTransform, timeTransform)
+END_MEMBER_PROC
+
+// Apply frame speed
+MEMBER_PROC_0(__ApplyAnimFrameRate)
+	SET_FRAME_RATE(SELF __animFrameRate)
+END_MEMBER_PROC
+
+// Check tree of scene objects for animation
+MEMBER_FUNC_1(TBOOL, __IsTreeAnimated, TOBJECT, startObj)
+	LOCAL_VAR(TARRAY(TOBJECT), children, GET_CHILDREN(startObj))
+	FOR(i, 0, SIZE(children))
+		LOCAL_VAR(TOBJECT, child, GET_ELEM(children, i))
+		LOCAL_VAR(TSTRING, childname, GET_OBJECT_NAME(child))
+		IF(HAS_TM_ANIMATION(child) OR HAS_MORPH_ANIMATION(child))
+			RETURN_VAL(TRUE)
+		END_IF
+		IF(CALLF1(SELF __IsTreeAnimated, child))
+			RETURN_VAL(TRUE)
+		END_IF
+	END_FOR
+	RETURN_VAL(FALSE)
+END_MEMBER_PROC
+
+// Apply animation range
+MEMBER_PROC_0(__ApplyAnimRange)
+	LOCAL_VAR(TINT, f, CALLF0(SELF __timeTransform.GetStartFrameInScene))
+	LOCAL_VAR(TINT, l, CALLF0(SELF __timeTransform.GetEndFrameInScene))
+	LOCAL_VAR(TBOOL, mergeAnimRanges, CALLF1(SELF __IsTreeAnimated, ROOT_OBJECT))
+	IF(mergeAnimRanges)
+		IF(f > GET_START_FRAME)
+			ASSIGN(f, GET_START_FRAME)
+		END_IF
+		IF(l < GET_END_FRAME)
+			ASSIGN(l, GET_END_FRAME)
+		END_IF
+	END_IF
+	SET_ANIMATION_RANGE(f, l)
+END_MEMBER_PROC
+
+// Helper function to transform time
+MEMBER_FUNC_1(TINT, __TransformTime, TINT, frameInFile)
+	LOCAL_VAR(TINT, a, CALLF0(SELF __timeTransform.GetStartFrameInFile))
+	LOCAL_VAR(TINT, b, CALLF0(SELF __timeTransform.GetStartFrameInScene))
+	LOCAL_VAR(TINT, frameInScene, frameInFile - a + b)
+	RETURN_VAL(frameInScene)
+END_MEMBER_FUNC
+
+// Recursive delete TM animation keys of children of the specified object
+MEMBER_PROC_1(__DelTreeTMAnimation, TOBJECT, obj)
+	LOCAL_VAR(TARRAY(TOBJECT), children, GET_CHILDREN(obj))
+	FOR(i, 0, SIZE(children))
+		LOCAL_VAR(TOBJECT, child, GET_ELEM(children, i))
+		LOCAL_VAR(TNameAnalyzer, na, CALLF1(AnalyzeName, GET_OBJECT_NAME(child)))
+		IF(CALLF0(na.GetPrefix) == SELF __modelPrefix)
+			DELETE_TM_ANIMATION(child)
+			CALLP1(SELF __DelTreeTMAnimation, child)
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Delete old TM animation of all objects of the model
+MEMBER_PROC_0(__DeleteOldTMAnimation)
+	CALLP1(SELF __DelTreeTMAnimation, ROOT_OBJECT)
+END_MEMBER_PROC
+
+// Recursive delete morph animation keys of children of the specified object
+MEMBER_PROC_1(__DelTreeMorphAnimation, TOBJECT, obj)
+	LOCAL_VAR(TARRAY(TOBJECT), children, GET_CHILDREN(obj))
+	FOR(i, 0, SIZE(children))
+		LOCAL_VAR(TOBJECT, child, GET_ELEM(children, i))
+		LOCAL_VAR(TNameAnalyzer, na, CALLF1(AnalyzeName, GET_OBJECT_NAME(child)))
+		IF(CALLF0(na.GetPrefix) == SELF __modelPrefix)
+			DELETE_MORPH_ANIMATION(child)
+			CALLP1(SELF __DelTreeMorphAnimation, child)
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Delete old morph animation of all meshes of the model
+MEMBER_PROC_0(__DeleteOldMorphAnimation)
+	CALLP1(SELF __DelTreeMorphAnimation, ROOT_OBJECT)
+END_MEMBER_PROC
+
+// Recursive delete meshes which are children of the specified object
+MEMBER_PROC_1(__DelTreeMeshes, TOBJECT, obj)
+	LOCAL_VAR(TARRAY(TOBJECT), children, GET_CHILDREN(obj))
+	FOR(i, 0, SIZE(children))
+		LOCAL_VAR(TOBJECT, child, GET_ELEM(children, i))
+		LOCAL_VAR(TNameAnalyzer, na, CALLF1(AnalyzeName, GET_OBJECT_NAME(child)))
+		IF(CALLF0(na.GetPrefix) == SELF __modelPrefix)
+			CALLP1(SELF __DelTreeMeshes, child)
+			IF(CALLF0(na.GetObjectType) == OBJTYPE_MESH)
+				DELETE_OBJECT(child)
+			END_IF
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Delete old meshes of the model
+MEMBER_PROC_0(__DeleteOldMeshes)
+	CALLP1(SELF __DelTreeMeshes, ROOT_OBJECT)
+END_MEMBER_PROC
+
+// Fills internal array __animatedOrHasAnimatedParent
+MEMBER_PROC_0(__FindAnimatedObjects)
+	ASSIGN(SELF __animatedOrHasAnimatedParent, EMPTY_ARRAY(TBOOL))
+	RESERVE(SELF __animatedOrHasAnimatedParent, SIZE(SELF __objectsDesc))
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		APPEND(SELF __animatedOrHasAnimatedParent, FALSE)
+	END_FOR
+		
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		LOCAL_VAR(REF(TObjectDesc), objDesc, GET_ELEM(SELF __objectsDesc, i))
+		IF((CALLF0(objDesc.GetObjectType) == OBJTYPE_BONE) OR (CALLF0(objDesc.GetObjectType) == OBJTYPE_SLOT))
+			LOCAL_VAR(REF(TPosTrack), posTrack, CALLF0(objDesc.GetPosTrack))
+			LOCAL_VAR(REF(TRotTrack), rotTrack, CALLF0(objDesc.GetRotTrack))
+			IF((CALLF0(posTrack.GetNumSamples) != 0) OR (CALLF0(rotTrack.GetNumSamples) != 0))
+				SET_ELEM(SELF __animatedOrHasAnimatedParent, i, TRUE)
+			ELSE
+				LOCAL_VAR(REF(TSTRING), parentName, CALLF0(objDesc.GetParentName))
+				IF(parentName != EMPTY_STRING)
+					FOR(k, 0, i)
+						IF(CALLF0(GET_ELEM(SELF __objectsDesc, k).GetObjectName) == parentName)
+							LOCAL_VAR(TBOOL, a, GET_ELEM(SELF __animatedOrHasAnimatedParent, k))
+							SET_ELEM(SELF __animatedOrHasAnimatedParent, i, a)
+							BREAK
+						END_IF
+					END_FOR
+				END_IF
+			END_IF
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Calculates internal array __animationTMs
+MEMBER_PROC_1(__CalcAnimationTMs, TINT, frameOffset)
+	IF(SIZE(SELF __animationTMs) != SIZE(SELF __objectsDesc))
+		ASSIGN(SELF __animationTMs, EMPTY_ARRAY(TMATRIX3))
+		RESERVE(SELF __animationTMs, SIZE(SELF __objectsDesc))
+		FOR(i, 0, SIZE(SELF __objectsDesc))
+			LOCAL_VAR(TMATRIX3, tm, CALLF0(GET_ELEM(SELF __objectsDesc, i).GetTransform))
+			SET_ROW3(tm, GET_ROW3(tm) * SELF __scaleCoef)
+			APPEND(SELF __animationTMs, tm)
+		END_FOR
+	END_IF
+	
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		IF(GET_ELEM(SELF __animatedOrHasAnimatedParent, i))
+			LOCAL_VAR(REF(TObjectDesc), objDesc, GET_ELEM(SELF __objectsDesc, i))
+			LOCAL_VAR(TMATRIX3, tm, CALLF0(objDesc.GetTransform))
+			SET_ROW3(tm, GET_ROW3(tm) * SELF __scaleCoef)
+						
+			LOCAL_VAR(REF(TSTRING), parentName, CALLF0(objDesc.GetParentName))
+			IF(parentName != EMPTY_STRING)
+				FOR(k, 0, i)
+					IF(CALLF0(GET_ELEM(SELF __objectsDesc, k).GetObjectName) == parentName)
+						LOCAL_VAR(TMATRIX3, parentTM, GET_ELEM(SELF __animationTMs, k))
+						LOCAL_VAR(TMATRIX3, startParentTM, CALLF0(GET_ELEM(SELF __objectsDesc, k).GetTransform))
+						SET_ROW3(startParentTM, GET_ROW3(startParentTM) * SELF __scaleCoef)
+						ASSIGN(tm, MULMATMAT(MULMATMAT(tm, INVERSE(startParentTM)), parentTM))
+						BREAK
+					END_IF
+				END_FOR
+			END_IF
+						
+			LOCAL_VAR(REF(TPosTrack), posTrack, CALLF0(objDesc.GetPosTrack))
+			LOCAL_VAR(REF(TRotTrack), rotTrack, CALLF0(objDesc.GetRotTrack))
+			IF((CALLF0(posTrack.GetNumSamples) != 0) OR (CALLF0(rotTrack.GetNumSamples) != 0))
+				LOCAL_VAR(TPOINT3, pos, GET_TRANSLATION_PART(tm))
+				LOCAL_VAR(TQUAT, q, GET_ROTATION_PART(tm))
+				IF(CALLF0(posTrack.GetNumSamples) != 0) 
+					ASSIGN(pos, CALLF1(posTrack.GetSamplePos, frameOffset) * SELF __scaleCoef)
+				END_IF
+				IF(CALLF0(rotTrack.GetNumSamples) != 0)
+					LOCAL_VAR(TPOINT3, axis, CALLF1(rotTrack.GetSampleAxis, frameOffset))
+					LOCAL_VAR(TFLOAT,  angle, CALLF1(rotTrack.GetSampleAngle, frameOffset))
+					ASSIGN(q, NEW_QUAT(axis, angle))
+				END_IF
+				ASSIGN(tm, MULMATMAT(ROTATION_MATRIX(q), TRANSLATION_MATRIX(pos)))
+			END_IF
+			
+			SET_ELEM(SELF __animationTMs, i, tm)
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Create TM animation keys for all objects at one frame
+MEMBER_PROC_0(__ApplySingleTMAnim)
+	FOR(i, 0, SIZE(SELF __objectsDesc))
+		IF(GET_ELEM(SELF __animatedOrHasAnimatedParent, i))
+			LOCAL_VAR(REF(TObjectDesc), objDesc, GET_ELEM(SELF __objectsDesc, i))
+			LOCAL_VAR(REF(TSTRING), objName, CALLF0(objDesc.GetObjectName))
+			LOCAL_VAR(TOBJECT, obj, CALLF1(SELF __FindObjectByName, objName))
+			IF(obj != INVALID_OBJECT)
+				LOCAL_VAR(TMATRIX3, tm, GET_ELEM(SELF __animationTMs, i))
+				LOCAL_VAR(TMATRIX3, parentTM, IDENTITY_MATRIX3)
+				LOCAL_VAR(REF(TSTRING), parentName, CALLF0(objDesc.GetParentName))
+				IF(parentName != EMPTY_STRING)
+					FOR(k, 0, i)
+						IF(CALLF0(GET_ELEM(SELF __objectsDesc, k).GetObjectName) == parentName)
+							ASSIGN(parentTM, GET_ELEM(SELF __animationTMs, k))
+							BREAK
+						END_IF
+					END_FOR
+				END_IF
+				
+				LOCAL_VAR(TMATRIX3, ancestorTM, IDENTITY_MATRIX3)
+				LOCAL_VAR(TOBJECT, ancestor, GET_PARENT(obj))
+				WHILE(ancestor != ROOT_OBJECT)
+					LOCAL_VAR(TNameAnalyzer, na, CALLF1(AnalyzeName, GET_OBJECT_NAME(ancestor)))
+					IF(na.GetObjectType() != OBJTYPE_MESH)
+						ASSIGN(ancestorTM, GET_TRANSFORM(ancestor))
+						BREAK
+					END_IF
+					ASSIGN(ancestor, GET_PARENT(ancestor))
+				END_WHILE
+				LOCAL_VAR(TMATRIX3, tm2, MULMATMAT(MULMATMAT(tm, INVERSE(parentTM)), ancestorTM))
+				
+				LOCAL_VAR(TMATRIX3, tm3, GET_TRANSFORM(obj))
+				LOCAL_VAR(TMATRIX3, tmDelta, tm2 - tm3)
+				LOCAL_VAR(TFLOAT, delta0, VECLEN(GET_ROW0(tmDelta)))
+				LOCAL_VAR(TFLOAT, delta1, VECLEN(GET_ROW1(tmDelta)))
+				LOCAL_VAR(TFLOAT, delta2, VECLEN(GET_ROW2(tmDelta)))
+				LOCAL_VAR(TFLOAT, delta3, VECLEN(GET_ROW3(tmDelta)))
+				
+				LOCAL_VAR(TFLOAT, eps, 1 / INT_TO_FLOAT(1000))
+				IF((delta0 > eps) OR (delta1 > eps) OR (delta2 > eps) OR (delta3 > eps * SELF __scaleCoef))
+					ANIMATE_TRANSFORM(obj, tm2)	
+				END_IF
+			END_IF
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Apply animation of transformation matrix to model
+MEMBER_PROC_0(__ApplyTMAnimation)
+	CALLP0(SELF __FindAnimatedObjects)
+	LOCAL_VAR(TINT, start, CALLF0(SELF __timeTransform.GetStartFrameInFile))
+	LOCAL_VAR(TINT, end, CALLF0(SELF __timeTransform.GetEndFrameInFile))
+	FOR(frameInFile, start, end + 1)
+		LOCAL_VAR(TINT, frameInScene, CALLF1(SELF __TransformTime, frameInFile))
+		SET_CURRENT_FRAME(frameInScene)
+		LOCAL_VAR(TSTRING, caption, T("Applying TM animation"))
+		SHOW_PROGRESS_BAR(caption, 100 * (frameInFile - start) / (end - start + 1))
+		CALLP1(SELF __CalcAnimationTMs, frameInFile - SELF __animStartFrame)
+		CALLP0(SELF __ApplySingleTMAnim)
+	END_FOR
+	SET_CURRENT_FRAME(CALLF0(SELF __timeTransform.GetStartFrameInScene))
+END_MEMBER_PROC
+
+// Apply morph animation to mesh
+MEMBER_PROC_0(__ApplyMorphAnimation)
+	LOCAL_VAR(TINT, start, CALLF0(SELF __timeTransform.GetStartFrameInFile))
+	LOCAL_VAR(TINT, end, CALLF0(SELF __timeTransform.GetEndFrameInFile))
+	FOR(frameInFile, start, end + 1)
+		LOCAL_VAR(TINT, frameInScene, CALLF1(SELF __TransformTime, frameInFile))
+		SET_CURRENT_FRAME(frameInScene)
+		LOCAL_VAR(TSTRING, caption, T("Applying morph animation"))
+		SHOW_PROGRESS_BAR(caption, 100 * (frameInFile - start) / (end - start + 1))
+		FOR(i, 0, SIZE(SELF __objectsDesc))
+			LOCAL_VAR(REF(TObjectDesc), objDesc, GET_ELEM(SELF __objectsDesc, i))
+			LOCAL_VAR(REF(TSTRING), objName, CALLF0(objDesc.GetObjectName))
+			LOCAL_VAR(REF(TMorphTrack), morphTrack, CALLF0(objDesc.GetMorphTrack))
+			LOCAL_VAR(TOBJECT, obj, CALLF1(SELF __FindObjectByName, objName))
+			IF(obj != INVALID_OBJECT)
+				LOCAL_VAR(TMATRIX3, matWorldToLocal, INVERSE(CALLF0(objDesc.GetTransform)))
+				LOCAL_VAR(TARRAY(TPOINT3), points, CALLF1(morphTrack.GetSampleVerts, frameInFile - SELF __animStartFrame))
+				FOR(k, 0, SIZE(points))
+					LOCAL_VAR(TPOINT3, pos, GET_ELEM(points, k))
+					ASSIGN(pos, MULVECMAT(pos, matWorldToLocal))
+					ASSIGN(pos, pos * SELF __scaleCoef)
+					SET_ELEM(points, k, pos)
+				END_FOR
+				ANIMATE_VERTICES(obj, points)
+			END_IF
+		END_FOR
+	END_FOR
+	SET_CURRENT_FRAME(CALLF0(SELF __timeTransform.GetStartFrameInScene))
+END_MEMBER_PROC
+
+
+// Public section:
+// Initialize
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __file, CALLF0(NewFile))
+	ASSIGN(SELF __filename, EMPTY_STRING)
+	ASSIGN(SELF __lineText, EMPTY_STRING)
+	ASSIGN(SELF __line, 0)
+	ASSIGN(SELF __column, 0)
+	ASSIGN(SELF __tokenLine, 0)
+	ASSIGN(SELF __tokenColumn, 0)
+	ASSIGN(SELF __token, EMPTY_STRING)
+	ASSIGN(SELF __token1, EMPTY_STRING)
+	ASSIGN(SELF __token2, EMPTY_STRING)
+	ASSIGN(SELF __token3, EMPTY_STRING)
+	ASSIGN(SELF __tokenEOF, T("EOF"))
+	ASSIGN(SELF __animStartFrame, 0)
+	ASSIGN(SELF __animEndFrame, 100)
+	ASSIGN(SELF __animFrameRate, 25)
+	ASSIGN(SELF __materialsDesc, EMPTY_ARRAY(TARRAY(TMaterialDesc)))
+	ASSIGN(SELF __objectsDesc, EMPTY_ARRAY(TObjectDesc))
+	ASSIGN(SELF __numBones, 0)
+	ASSIGN(SELF __bip01Found, FALSE)
+	ASSIGN(SELF __numSlots, 0)
+	ASSIGN(SELF __numMeshes, 0)
+	ASSIGN(SELF __numTMAnimations, 0)
+	ASSIGN(SELF __numMeshAnimations, 0)
+	ASSIGN(SELF __numSoftSkins, 0)
+	ASSIGN(SELF __ascType, ASCTYPE_STATIC_MESH)
+	ASSIGN(SELF __spaceTransform, CALLF0(NewSpaceTransform))
+	ASSIGN(SELF __scaleCoef, 1.0)
+	ASSIGN(SELF __timeTransform, CALLF0(NewTimeTransform))
+	ASSIGN(SELF __modelPrefix, EMPTY_STRING)
+	ASSIGN(SELF __modelBonesAndSlots, EMPTY_ARRAY(TOBJECT))
+	ASSIGN(SELF __modelBonesAndSlotsStoredTMs, EMPTY_ARRAY(TMATRIX3))
+	ASSIGN(SELF __animatedOrHasAnimatedParent, EMPTY_ARRAY(TBOOL))
+	ASSIGN(SELF __animationTMs, EMPTY_ARRAY(TMATRIX3))
+	ASSIGN(SELF __impMaterials, EMPTY_ARRAY(TARRAY(TMATERIAL)))
+	ASSIGN(SELF __impObjects, EMPTY_ARRAY(TOBJECT))
+	ASSIGN(SELF __impObjectNames, EMPTY_ARRAY(TSTRING))
+END_MEMBER_PROC
+
+// Read asc file; throws exception if failed
+MEMBER_PROC_1(ReadASCFile, TSTRING, filename)
+	CALLP0(SELF Init)
+	ASSIGN(SELF __filename, filename)
+	TRY
+		CALLP2(SELF __file.Open, filename, T("rt"))
+		LOCAL_VAR(TINT, level, 0)
+		LOCAL_VAR(TSTRING, token, EMPTY_STRING)
+		
+		ASSIGN(token, CALLF0(SELF __ReadToken))
+		IF(STRICMP(T("*3DSMAX_ASCIIEXPORT"), token) != 0)
+			THROW(CALLF2(FormatMsg1, ErrFileIsNotASC, SELF __filename))
+		END_IF		
+		CALLP0(SELF __ReadASCVersion)
+		
+		WHILE(TRUE)
+			IF(level == 0)
+				ASSIGN(token, CALLF0(SELF __ReadTokenSafe))
+				IF(token == SELF __tokenEOF)
+					BREAK
+				END_IF
+			ELSE
+				ASSIGN(token, CALLF0(SELF __ReadToken))
+			END_IF
+			IF(STRICMP(token, T("*COMMENT")) == 0)
+				CALLP0(SELF __ReadComment)
+			ELSE_IF(STRICMP(token, T("*SCENE")) == 0)
+				CALLP0(SELF __ReadSceneInfo)
+			ELSE_IF(STRICMP(token, T("*MATERIAL_LIST")) == 0)
+				CALLP0(SELF __ReadMaterialList)
+			ELSE_IF(STRICMP(token, T("*GEOMOBJECT")) == 0)
+				CALLP0(SELF __ReadGeomObject)
+			ELSE_IF(STRICMP(token, T("*HELPEROBJECT")) == 0)
+				CALLP0(SELF __ReadGeomObject)
+			ELSE_IF(STRICMP(token, T("*MESH_SOFTSKINVERTS")) == 0)
+				CALLP0(SELF __ReadSoftSkinVerts)
+			ELSE_IF(token == T("{"))
+				ASSIGN(level, level + 1)
+			ELSE_IF(token == T("}"))
+				ASSIGN(level, level - 1)
+			END_IF
+		END_WHILE
+		CALLP0(SELF __file.Close)
+		CALLP0(SELF __CalcAscType)
+	END_TRY
+	CATCH
+		CALLP0(SELF __file.Close)
+		THROW_AGAIN
+	END_CATCH
+END_MEMBER_PROC
+
+// Get the first frame
+MEMBER_FUNC_0(TINT, GetAnimStartFrame)
+	RETURN_VAL(SELF __animStartFrame)
+END_MEMBER_FUNC
+
+// Get the last frame
+MEMBER_FUNC_0(TINT, GetAnimEndFrame)
+	RETURN_VAL(SELF __animEndFrame)
+END_MEMBER_FUNC
+
+// Get frame speed (frames per second)
+MEMBER_FUNC_0(TINT, GetAnimFrameRate)
+	RETURN_VAL(SELF __animFrameRate)
+END_MEMBER_FUNC
+
+// Get number of meshes loaded from the file
+MEMBER_FUNC_0(TINT, GetNumMeshes)
+	RETURN_VAL(SELF __numMeshes)
+END_MEMBER_FUNC
+
+// Get number of slots loaded from the file
+MEMBER_FUNC_0(TINT, GetNumSlots)
+	RETURN_VAL(SELF __numSlots)
+END_MEMBER_FUNC
+
+// Get number of bones loaded from the file
+MEMBER_FUNC_0(TINT, GetNumBones)
+	RETURN_VAL(SELF __numBones)
+END_MEMBER_FUNC
+
+// Get asc file type; see the "ModelHierarchy.meta" file for possible asc file types.
+MEMBER_FUNC_0(TINT, GetAscType)
+	RETURN_VAL(SELF __ascType)
+END_MEMBER_FUNC
+
+// Get array of objects imported from file
+MEMBER_FUNC_0(REF(TARRAY(TObjectDesc)), GetObjectsDesc)
+	RETURN_VAL(SELF __objectsDesc)
+END_MEMBER_FUNC
+
+// Set space transformation
+MEMBER_PROC_1(SetSpaceTransform, TSpaceTransform, spaceTransform)
+	CALLP1(SELF __SetSpaceTransform, spaceTransform)
+END_MEMBER_PROC
+
+// Set model prefix
+MEMBER_PROC_1(SetModelPrefix, TSTRING, modelPrefix)
+	CALLP1(SELF __SetModelPrefix, modelPrefix)
+END_MEMBER_PROC
+
+// Set skin type
+MEMBER_PROC_1(SetSkinType, REF(TSTRING), skinType)
+	CALLP1(SELF __SetSkinType, skinType)
+END_MEMBER_PROC
+
+// Create materials
+MEMBER_PROC_0(CreateMaterials)
+	CALLP0(SELF __CreateMaterials)
+END_MEMBER_PROC
+
+// Create bones as small cubes (basic mode)
+MEMBER_PROC_0(CreateCubicBones)
+	CALLP1(SELF __CreateBones, 1)
+END_MEMBER_PROC
+
+// Create bones as connected parallelepipeds (advanced mode)
+MEMBER_PROC_0(CreateConnectedBones)
+	CALLP1(SELF __CreateBones, 2)
+END_MEMBER_PROC
+
+// Create slots
+MEMBER_PROC_0(CreateSlots)
+	CALLP0(SELF __CreateSlots)
+END_MEMBER_PROC
+
+// Create meshes
+MEMBER_PROC_0(CreateMeshes)
+	CALLP0(SELF __CreateMeshes)
+END_MEMBER_PROC
+
+// Load meshes for bones and slots from the "meshes/KrxImpExpSamples" folder
+MEMBER_PROC_1(ReplaceBonesAndSlotsWithSampleMeshes, TSTRING, sampleMeshesDir)
+	CALLP1(SELF __ReplaceBonesAndSlotsWithSampleMeshes, sampleMeshesDir)
+END_MEMBER_PROC
+
+// Set display properties of imported objects
+MEMBER_PROC_3(SetDispProps, TINT, objType, REF(TSTRING), layerName, REF(TObjectDisplayProps), dispProps)
+	CALLP3(SELF __SetDispProps, objType, layerName, dispProps)
+END_MEMBER_PROC
+
+// Attach imported model as child to the specified object
+MEMBER_PROC_1(LinkModelToObject, TSTRING, newParentName)
+	CALLP1(SELF __LinkModelToObject, newParentName)
+END_MEMBER_PROC
+
+// Saves model bones' transformation matrices.
+// This function must be used before skin applying.
+MEMBER_PROC_0(StoreModelPose)
+	CALLP0(SELF __StoreModelPose)
+END_MEMBER_PROC
+
+// Resets bones to the initial positions.
+// (A skin must be applied to bones in initial positions.)
+// This function must be used before skin applying.
+MEMBER_PROC_0(InitialModelPose)
+	CALLP0(SELF __InitialModelPose)
+END_MEMBER_PROC
+
+// Apply skin to model
+MEMBER_PROC_0(ApplySkin)
+	CALLP0(SELF __ApplySkin)
+END_MEMBER_PROC
+
+// Restore model bones' transformation matrices;
+// this functions moves bones to positions which were stored with function __StoreAndResetModelPose
+MEMBER_PROC_0(RestoreModelPose)
+	CALLP0(SELF __RestoreModelPose)
+END_MEMBER_PROC
+
+// Set time transformation
+MEMBER_PROC_1(SetTimeTransform, TTimeTransform, timeTransform)
+	CALLP1(SELF __SetTimeTransform, timeTransform)
+END_MEMBER_PROC
+
+// Apply frame speed
+MEMBER_PROC_0(ApplyAnimFrameRate)
+	CALLP0(SELF __ApplyAnimFrameRate)
+END_MEMBER_PROC
+
+// Apply animation range
+MEMBER_PROC_0(ApplyAnimRange)
+	CALLP0(SELF __ApplyAnimRange)
+END_MEMBER_PROC
+
+// Delete old TM animation of all the model's bones and slots
+MEMBER_PROC_0(DeleteOldTMAnimation)
+	CALLP0(SELF __DeleteOldTMAnimation)
+END_MEMBER_PROC
+
+// Delete old morph animation of all the model's meshes
+MEMBER_PROC_0(DeleteOldMorphAnimation)
+	CALLP0(SELF __DeleteOldMorphAnimation)
+END_MEMBER_PROC
+
+// Delete old meshes of the model
+MEMBER_PROC_0(DeleteOldMeshes)
+	CALLP0(SELF __DeleteOldMeshes)
+END_MEMBER_PROC
+
+// Apply animation of transformation matrix to model
+MEMBER_PROC_0(ApplyTMAnimation)
+	CALLP0(SELF __ApplyTMAnimation)
+END_MEMBER_PROC
+
+// Apply morph animation to mesh
+MEMBER_PROC_0(ApplyMorphAnimation)
+	CALLP0(SELF __ApplyMorphAnimation)
+END_MEMBER_PROC
+
+END_CLASS // TASCFileLoader
+
+// Create an instance of class TASCFileLoader
+GLOBAL_FUNC_0(TASCFileLoader, NewASCFileLoader)
+	LOCAL_VAR(TASCFileLoader, loader, NEW_VAL(TASCFileLoader))
+	CALLP0(loader.Init)
+	RETURN_VAL(loader)
+END_GLOBAL_FUNC
+
+#endif // ASC_FILE_LOADER_META

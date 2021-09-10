@@ -1,0 +1,73 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        MaterialDesc.meta
+// Purpose:     Definition of class TMaterialDesc.
+//              TMaterialDesc is a class representing a material when it is loaded from an ASC file
+//              and not applied yet to scene
+// Author:      Vitaly Baranov
+// Created:     March 31, 2009
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef MATERIAL_DESC_META
+#define MATERIAL_DESC_META
+
+#include "Meta.h"
+
+///////////////////////////////////////////////
+// TMaterialDesc class
+
+CLASS(TMaterialDesc)
+
+// Private section:
+MEMBER_VAR(TSTRING, __materialName)
+MEMBER_VAR(TSTRING, __diffuseMapFilename)
+MEMBER_VAR(TCOLOR,  __diffuseColor)
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __materialName, EMPTY_STRING)
+	ASSIGN(SELF __diffuseMapFilename, EMPTY_STRING)
+	ASSIGN(SELF __diffuseColor, BLACK_COLOR)
+END_MEMBER_PROC
+
+// Get material's name
+MEMBER_FUNC_0(REF(TSTRING), GetMaterialName)
+	RETURN_VAL(SELF __materialName)
+END_MEMBER_FUNC
+
+// Set material's name
+MEMBER_PROC_1(SetMaterialName, TSTRING, materialName)
+	ASSIGN(SELF __materialName, materialName)
+END_MEMBER_FUNC
+
+// Get diffuse map's file name
+MEMBER_FUNC_0(REF(TSTRING), GetDiffuseMapFilename)
+	RETURN_VAL(SELF __diffuseMapFilename)
+END_MEMBER_FUNC
+
+// Set diffuse map's file name
+MEMBER_PROC_1(SetDiffuseMapFilename, TSTRING, filename)
+	ASSIGN(SELF __diffuseMapFilename, filename)
+END_MEMBER_PROC
+
+// Get diffuse color
+MEMBER_FUNC_0(TCOLOR, GetDiffuseColor)
+	RETURN_VAL(SELF __diffuseColor)
+END_MEMBER_FUNC
+
+// Set diffuse color
+MEMBER_PROC_1(SetDiffuseColor, TCOLOR, clr)
+	ASSIGN(SELF __diffuseColor, clr)
+END_MEMBER_PROC
+
+END_CLASS // TMaterialDesc
+
+// Global function to create an instance of class TMaterialDesc
+GLOBAL_FUNC_0(TMaterialDesc, NewMaterialDesc)
+	LOCAL_VAR(TMaterialDesc, m, NEW_VAL(TMaterialDesc))
+	CALLP0(m.Init)
+	RETURN_VAL(m)
+END_GLOBAL_FUNC
+
+#endif // MATERIAL_DESC_META

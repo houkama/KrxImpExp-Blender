@@ -1,0 +1,182 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        ObjectDesc.meta
+// Purpose:     Definition of class TObjectDesc.
+//              TObjectDesc is a class representing an object when 
+//              it is loaded from an ASC file and not applied to scene yet.
+// Author:      Vitaly Baranov
+// Created:     March 31, 2009
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef OBJECT_DESC_META
+#define OBJECT_DESC_META
+
+#include "Meta.h"
+#include "MaterialDesc.meta"
+#include "MeshDesc.meta"
+#include "SoftSkinVerts.meta"
+#include "PosTrack.meta"
+#include "RotTrack.meta"
+#include "MorphTrack.meta"
+
+
+///////////////////////////////////////////////
+// TObjectDesc class
+
+CLASS(TObjectDesc)
+
+// Private section:
+MEMBER_VAR(TSTRING,     __objectName)
+MEMBER_VAR(TINT,        __objectType)
+MEMBER_VAR(TSTRING,     __parentName)
+MEMBER_VAR(TMATRIX3,    __transform)
+MEMBER_VAR(TINT,        __matRef)
+MEMBER_VAR(TMeshDesc,   __meshDesc)
+MEMBER_VAR(TSoftSkinVerts, __ssv)
+MEMBER_VAR(TPosTrack,      __posTrack)
+MEMBER_VAR(TRotTrack,      __rotTrack)
+MEMBER_VAR(TMorphTrack,    __morphTrack)
+
+// Public section:
+// initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __objectName, EMPTY_STRING)
+	ASSIGN(SELF __objectType, OBJTYPE_DUMMY)
+	ASSIGN(SELF __parentName, EMPTY_STRING)
+	ASSIGN(SELF __transform,  IDENTITY_MATRIX3)
+	ASSIGN(SELF __matRef,     0)
+	ASSIGN(SELF __meshDesc,   CALLF0(NewMeshDesc))
+	ASSIGN(SELF __ssv,        CALLF0(NewSoftSkinVerts))
+	ASSIGN(SELF __posTrack,   CALLF0(NewPosTrack))
+	ASSIGN(SELF __rotTrack,   CALLF0(NewRotTrack))
+	ASSIGN(SELF __morphTrack, CALLF0(NewMorphTrack))
+END_MEMBER_PROC
+
+// Get the object's name
+MEMBER_FUNC_0(REF(TSTRING), GetObjectName)
+	RETURN_VAL(SELF __objectName)
+END_MEMBER_FUNC
+
+// Set the object's name
+MEMBER_PROC_1(SetObjectName, TSTRING, objectName)
+	ASSIGN(SELF __objectName, objectName)
+END_MEMBER_PROC
+
+// Get the object's type (bone, slot, mesh, or dummy)
+MEMBER_FUNC_0(TINT, GetObjectType)
+	RETURN_VAL(SELF __objectType)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetObjectType, TINT, objectType)
+	ASSIGN(SELF __objectType, objectType)
+END_MEMBER_PROC
+
+// Get name of the object's parent;
+// An empty string means the object has not a parent)
+MEMBER_FUNC_0(REF(TSTRING), GetParentName)
+	RETURN_VAL(SELF __parentName)
+END_MEMBER_FUNC
+
+// Set name of the object's parent;
+// An empty string means the object has not a parent)
+MEMBER_PROC_1(SetParentName, TSTRING, parentName)
+	ASSIGN(SELF __parentName, parentName)
+END_MEMBER_PROC
+
+// Get world-space transformation matrix of the object
+MEMBER_FUNC_0(TMATRIX3, GetTransform)
+	// This function always returns copy of the member matrix
+	LOCAL_VAR(TFLOAT, a00, GET_X(GET_ROW0(SELF __transform)))
+	LOCAL_VAR(TFLOAT, a01, GET_Y(GET_ROW0(SELF __transform)))
+	LOCAL_VAR(TFLOAT, a02, GET_Z(GET_ROW0(SELF __transform)))
+	LOCAL_VAR(TFLOAT, a10, GET_X(GET_ROW1(SELF __transform)))
+	LOCAL_VAR(TFLOAT, a11, GET_Y(GET_ROW1(SELF __transform)))
+	LOCAL_VAR(TFLOAT, a12, GET_Z(GET_ROW1(SELF __transform)))
+	LOCAL_VAR(TFLOAT, a20, GET_X(GET_ROW2(SELF __transform)))
+	LOCAL_VAR(TFLOAT, a21, GET_Y(GET_ROW2(SELF __transform)))
+	LOCAL_VAR(TFLOAT, a22, GET_Z(GET_ROW2(SELF __transform)))
+	LOCAL_VAR(TFLOAT, a30, GET_X(GET_ROW3(SELF __transform)))
+	LOCAL_VAR(TFLOAT, a31, GET_Y(GET_ROW3(SELF __transform)))
+	LOCAL_VAR(TFLOAT, a32, GET_Z(GET_ROW3(SELF __transform)))
+	LOCAL_VAR(TMATRIX3, transformCopy, NEW_MATRIX3(NEW_POINT3(a00, a01, a02), NEW_POINT3(a10, a11, a12), NEW_POINT3(a20, a21, a22), NEW_POINT3(a30, a31, a32)))
+	RETURN_VAL(transformCopy)
+END_MEMBER_FUNC
+
+// Set world-space transformation matrix of the object
+MEMBER_PROC_1(SetTransform, TMATRIX3, transform)
+	ASSIGN(SELF __transform, transform)
+END_MEMBER_PROC
+
+// Get array of materials assigned to the object;
+// An empty array means there are not materials assigned to the object
+MEMBER_FUNC_0(TINT, GetMaterialRef)
+	RETURN_VAL(SELF __matRef)
+END_MEMBER_FUNC
+
+// Set array of materials assigned to the object;
+// An empty array means there are not materials assigned to the object
+MEMBER_PROC_1(SetMaterialRef, TINT, matRef)
+	ASSIGN(SELF __matRef, matRef)
+END_MEMBER_PROC
+
+// Get mesh linked to the object;
+// If the object is not a mesh object then this function returns mesh with no vertices and no faces
+MEMBER_FUNC_0(REF(TMeshDesc), GetMeshDesc)
+	RETURN_VAL(SELF __meshDesc)
+END_MEMBER_FUNC
+
+// Set mesh linked to the object
+MEMBER_PROC_1(SetMeshDesc, TMeshDesc, meshDesc)
+	ASSIGN(SELF __meshDesc, meshDesc)
+END_MEMBER_PROC
+
+// Get position animation track for the object
+MEMBER_FUNC_0(REF(TPosTrack), GetPosTrack)
+	RETURN_VAL(SELF __posTrack)
+END_MEMBER_FUNC
+
+// Set position animation track for the object
+MEMBER_PROC_1(SetPosTrack, TPosTrack, posTrack)
+	ASSIGN(SELF __posTrack, posTrack)
+END_MEMBER_PROC
+
+// Get rotation animation track for the object
+MEMBER_FUNC_0(REF(TRotTrack), GetRotTrack)
+	RETURN_VAL(SELF __rotTrack)
+END_MEMBER_FUNC
+
+// Set rotation animation track for the object
+MEMBER_PROC_1(SetRotTrack, TRotTrack, rotTrack)
+	ASSIGN(SELF __rotTrack, rotTrack)
+END_MEMBER_PROC
+
+// Get morph animation track for the object
+MEMBER_FUNC_0(REF(TMorphTrack), GetMorphTrack)
+	RETURN_VAL(SELF __morphTrack)
+END_MEMBER_FUNC
+
+// Set morph animation track for the object
+MEMBER_PROC_1(SetMorphTrack, TMorphTrack, morphTrack)
+	ASSIGN(SELF __morphTrack, morphTrack)
+END_MEMBER_PROC
+
+// Get weights' list for each vertex of the object
+MEMBER_FUNC_0(REF(TSoftSkinVerts), GetSoftSkinVerts)
+	RETURN_VAL(SELF __ssv)
+END_MEMBER_FUNC
+
+// Set weights' list for each vertex of the object
+MEMBER_PROC_1(SetSoftSkinVerts, TSoftSkinVerts, ssv)
+	ASSIGN(SELF __ssv, ssv)
+END_MEMBER_PROC
+
+END_CLASS // TObjectDesc
+
+// Global function to create an instance of class TObjectDesc
+GLOBAL_FUNC_0(TObjectDesc, NewObjectDesc)
+	LOCAL_VAR(TObjectDesc, m, NEW_VAL(TObjectDesc))
+	CALLP0(m.Init)
+	RETURN_VAL(m)
+END_GLOBAL_FUNC
+
+#endif // OBJECT_DESC_META

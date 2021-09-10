@@ -1,0 +1,87 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        MeshImporterDlgOutput.meta
+// Purpose:     Definition of TMeshImporterDlgOutput class.
+// Author:      Vitaly Baranov
+// Created:     June 6, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef MSH_IMPORTER_DLG_OUTPUT_META
+#define MSH_IMPORTER_DLG_OUTPUT_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "3dsImporterDefs.meta"
+#include "SpaceTransform.meta"
+#include "MeshImporterDlgInput.meta"
+
+// Output dialog data for 3d studio mesh importer
+CLASS(TMeshImporterDlgOutput)
+
+// Private section:
+MEMBER_VAR(TINT,    __curSceneMode)
+MEMBER_VAR(TSpaceTransform, __spaceTransform)
+MEMBER_VAR(TBOOL,   __continueImport)
+
+// Public section:
+// Initialization
+MEMBER_PROC_1(Init, TMeshImporterDlgInput, dlgInput)
+	ASSIGN(SELF __curSceneMode, CALLF0(dlgInput.GetCurrentSceneMode))
+	ASSIGN(SELF __continueImport, TRUE)
+	ASSIGN(SELF __spaceTransform, CALLF0(NewSpaceTransform))
+	CALLP1(SELF __spaceTransform.SetSystemUnitsPerFileUnit, CALLF0(dlgInput.GetSystemUnitsPerFileUnit))
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(Write, TFile, f)
+	CALLP1(f.WriteUnsignedChar, SELF __curSceneMode)
+	CALLP1(SELF __spaceTransform.Write, f)
+	CALLP1(f.WriteBool,  SELF __continueImport)
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(Read, TFile, f)
+	ASSIGN(SELF __curSceneMode, CALLF0(f.ReadUnsignedChar))
+	CALLP1(SELF __spaceTransform.Read, f)
+	ASSIGN(SELF __continueImport, CALLF0(f.ReadBool))
+END_MEMBER_PROC
+
+// What to do with current scene (one of constants CURSCN_?)
+MEMBER_PROC_1(SetCurrentSceneMode, TINT, curSceneMode)
+	ASSIGN(SELF __curSceneMode, curSceneMode)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetCurrentSceneMode)
+	RETURN_VAL(SELF __curSceneMode)
+END_MEMBER_FUNC
+
+// Space transformation
+MEMBER_PROC_1(SetSpaceTransform, TSpaceTransform, spaceTransform)
+	ASSIGN(SELF __spaceTransform, spaceTransform)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TSpaceTransform), GetSpaceTransform)
+	RETURN_VAL(SELF __spaceTransform)
+END_MEMBER_FUNC
+
+// Continue import (TRUE - continue, FALSE - cancel)
+MEMBER_PROC_1(SetContinueImport, TBOOL, continueImport)
+	ASSIGN(SELF __continueImport, continueImport)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TBOOL, GetContinueImport)
+	RETURN_VAL(SELF __continueImport)
+END_MEMBER_FUNC
+
+END_CLASS // TMeshImporterDlgOutput
+
+
+// Global function to create object of class TMeshImporterDlgOutput
+GLOBAL_FUNC_1(TMeshImporterDlgOutput, NewMeshImporterDlgOutput, TMeshImporterDlgInput, dlgInput)
+	LOCAL_VAR(TMeshImporterDlgOutput, dlgOutput, NEW_VAL(TMeshImporterDlgOutput))
+	CALLP1(dlgOutput.Init, dlgInput)
+	RETURN_VAL(dlgOutput)
+END_GLOBAL_FUNC
+
+#endif // MSH_IMPORTER_DLG_OUTPUT_META

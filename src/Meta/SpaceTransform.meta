@@ -1,0 +1,94 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        SpaceTransform.meta
+// Purpose:     Definition of TSpaceTransform class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef SPACE_TRANSFORM_META
+#define SPACE_TRANSFORM_META
+
+#include "Meta.h"
+#include "File.meta"
+
+// Types of measure units (used by the "__systemUnitType" field of the "TSpaceTransform" class)
+#define SETUPUNIT_NONE			0
+#define SETUPUNIT_INCH			1
+#define SETUPUNIT_FOOT			2
+#define SETUPUNIT_MILE			3
+#define SETUPUNIT_MILLIMETER	4
+#define SETUPUNIT_CENTIMETER	5
+#define SETUPUNIT_METER			6
+#define SETUPUNIT_KILOMETER		7
+
+// Space transformation
+CLASS(TSpaceTransform)
+
+// Private section:
+MEMBER_VAR(TINT,   __setupUnit)
+MEMBER_VAR(TFLOAT, __systemUnitsPerFileUnit)
+MEMBER_VAR(TFLOAT, __fileUnitsPerSystemUnit)
+
+// Public section:
+// Initialize
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __setupUnit,         	  SETUPUNIT_CENTIMETER)
+	ASSIGN(SELF __systemUnitsPerFileUnit, 1)
+	ASSIGN(SELF __fileUnitsPerSystemUnit, 1)
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(Write, TFile, f)
+	CALLP1(f.WriteSignedLong, SELF __setupUnit)
+	CALLP1(f.WriteFloat,      SELF __systemUnitsPerFileUnit)
+	CALLP1(f.WriteFloat,      SELF __fileUnitsPerSystemUnit)
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(Read, TFile, f)
+	ASSIGN(SELF __setupUnit,         	  CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __systemUnitsPerFileUnit, CALLF0(f.ReadFloat))
+	ASSIGN(SELF __fileUnitsPerSystemUnit, CALLF0(f.ReadFloat))
+END_MEMBER_PROC
+
+// Type of system unit to setup
+MEMBER_FUNC_0(TINT, GetSetupUnit)
+	RETURN_VAL(SELF __setupUnit)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetSetupUnit, TINT, setupUnit)
+	ASSIGN(SELF __setupUnit, setupUnit)
+END_MEMBER_PROC
+
+// Number of system units per 1 file units (this value is used when importing)
+MEMBER_FUNC_0(TFLOAT, GetSystemUnitsPerFileUnit)
+	RETURN_VAL(SELF __systemUnitsPerFileUnit)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetSystemUnitsPerFileUnit, TFLOAT, scaleCoef)
+	ASSIGN(SELF __systemUnitsPerFileUnit, scaleCoef)
+	ASSIGN(SELF __fileUnitsPerSystemUnit, INT_TO_FLOAT(1) / scaleCoef)
+END_MEMBER_PROC
+
+// Number of file units per 1 system units (this value is used when exporting)
+MEMBER_FUNC_0(TFLOAT, GetFileUnitsPerSystemUnit)
+	RETURN_VAL(SELF __fileUnitsPerSystemUnit)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetFileUnitsPerSystemUnit, TFLOAT, scaleCoef)
+	ASSIGN(SELF __fileUnitsPerSystemUnit, scaleCoef)
+	ASSIGN(SELF __systemUnitsPerFileUnit, INT_TO_FLOAT(1) / scaleCoef)
+END_MEMBER_PROC
+
+END_CLASS // TSpaceTransform
+
+// Global function to create an instance of class TSpaceTransform
+GLOBAL_FUNC_0(TSpaceTransform, NewSpaceTransform)
+	LOCAL_VAR(TSpaceTransform, st, NEW_VAL(TSpaceTransform))
+	CALLP0(st.Init)
+	RETURN_VAL(st)
+END_GLOBAL_FUNC
+
+#endif // SPACE_TRANSFORM_META

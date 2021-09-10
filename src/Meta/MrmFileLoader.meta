@@ -1,0 +1,354 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        MrmFileLoader.meta
+// Purpose:     Definition of TMrmFileLoader class.
+// Author:      Vitaly Baranov
+// Created:     June 7, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef MRM_FILE_LOADER_META
+#define MRM_FILE_LOADER_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "FormatMsg.meta"
+#include "ObjectStats.meta"
+#include "SpaceTransform.meta"
+#include "ZenArchive.meta"
+#include "ObjArrayUtils.meta"
+
+// Error messages
+#define ErrFileIsNotMRM			  T("File is not a multi-resolution mesh.\nFile name: \"%1\".")
+#define ErrMaterialChunkExpected  T("A chunk of class \"zCMaterial\" expected here.\nPosition: %1.\nFile name: \"%2\".")
+#define ErrVertIdxOutOfRange	  T("Vertex index is out of range while reading multi-resolution mesh.\nVertex index: %1 (Allowable range: %2..%3).\nFile name: \"%4\".")
+#define ErrTVertIdxOutOfRange	  T("Texture vertex index is out of range while reading multi-resolution mesh.\nTexture vertex index: %1 (Allowable range: %2..%3).\nFile name: \"%4\".")
+
+// Class for loading a mrm file
+CLASS(TMRMFileLoader)
+
+// Private section:
+MEMBER_VAR(TFile,             __file)
+MEMBER_VAR(TFLOAT,            __scaleCoef)
+MEMBER_VAR(TARRAY(TMATERIAL), __impMtls)
+MEMBER_VAR(TARRAY(TOBJECT),   __impObjects)
+MEMBER_VAR(TARRAY(TObjectStats), __impObjectStats)
+MEMBER_VAR(TOBJECT,           __curObj)
+MEMBER_VAR(TSTRING,           __curNameInFile)
+MEMBER_VAR(TSTRING,           __curNameInScene)
+MEMBER_VAR(TMESH,             __curMesh)
+MEMBER_VAR(TINT,              __mrmVersion)
+MEMBER_VAR(TINT,              __dataPos)
+MEMBER_VAR(TINT,              __dataSize)
+MEMBER_VAR(TINT,              __numSubMeshes)
+MEMBER_VAR(TINT,              __posSubMeshes)
+MEMBER_VAR(TINT,              __posVerts)
+MEMBER_VAR(TINT,              __numVerts)
+MEMBER_VAR(TINT,              __posMaterials)
+MEMBER_VAR(TINT,              __numTriangles)
+MEMBER_VAR(TINT,              __numWedges)
+
+// Set scale coefficient
+MEMBER_PROC_1(__SetSpaceTransform, TSpaceTransform, spaceTransform)
+	LOCAL_VAR(TINT, setupUnit, CALLF0(spaceTransform.GetSetupUnit))
+	IF(setupUnit == SETUPUNIT_INCH)
+		SET_SYSTEM_UNIT(UNITTYPE_INCH)
+	ELSE_IF(setupUnit == SETUPUNIT_FOOT)
+		SET_SYSTEM_UNIT(UNITTYPE_FOOT)
+	ELSE_IF(setupUnit == SETUPUNIT_MILE)
+		SET_SYSTEM_UNIT(UNITTYPE_MILE)
+	ELSE_IF(setupUnit == SETUPUNIT_MILLIMETER)
+		SET_SYSTEM_UNIT(UNITTYPE_MILLIMETER)
+	ELSE_IF(setupUnit == SETUPUNIT_CENTIMETER)
+		SET_SYSTEM_UNIT(UNITTYPE_CENTIMETER)
+	ELSE_IF(setupUnit == SETUPUNIT_METER)
+		SET_SYSTEM_UNIT(UNITTYPE_METER)
+	ELSE_IF(setupUnit == SETUPUNIT_KILOMETER)
+		SET_SYSTEM_UNIT(UNITTYPE_KILOMETER)
+	END_IF
+	ASSIGN(SELF __scaleCoef, CALLF0(spaceTransform.GetSystemUnitsPerFileUnit))
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__CreateObject)
+	ASSIGN(SELF __curNameInFile, T("zengin"))
+	IF(FIND_OBJECT_BY_NAME(SELF __curNameInFile) == INVALID_OBJECT)
+		ASSIGN(SELF __curNameInScene, SELF __curNameInFile)
+	ELSE
+		ASSIGN(SELF __curNameInScene, UNIQUE_OBJECT_NAME(SELF __curNameInFile))
+	END_IF
+	ASSIGN(SELF __curObj, NEW_MESH_OBJECT(SELF __curNameInScene))
+	ASSIGN(SELF __curMesh, GET_MESH(SELF __curObj))
+	APPEND(SELF __impObjects, SELF __curObj)
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__ReadVertices)
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), SELF __curNameInFile))
+	SET_NUM_VERTS(SELF __curMesh, SELF __numVerts)
+	CALLP1(SELF __file.SetPos, SELF __posVerts)
+	FOR(i, 0, SELF __numVerts)
+		IF(BIT_AND(i, 63) == 0)
+			SHOW_PROGRESS_BAR(caption, 25 * i / SELF __numVerts)
+		END_IF	
+		LOCAL_VAR(TFLOAT, x, CALLF0(SELF __file.ReadFloat) * SELF __scaleCoef)
+		LOCAL_VAR(TFLOAT, z, CALLF0(SELF __file.ReadFloat) * SELF __scaleCoef)
+		LOCAL_VAR(TFLOAT, y, CALLF0(SELF __file.ReadFloat) * SELF __scaleCoef)
+		LOCAL_VAR(TPOINT3, pt, NEW_POINT3(x, y, z))
+		SET_VERT(SELF __curMesh, i, pt)
+	END_FOR	
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__CountTriangles)
+	ASSIGN(SELF __numTriangles, 0)
+	FOR(i, 0, SELF __numSubMeshes)
+		CALLP1(SELF __file.SetPos, SELF __posSubMeshes + i * 80 + 4)
+		LOCAL_VAR(TINT, numTri_subMesh, CALLF0(SELF __file.ReadUnsignedLong))
+		ASSIGN(SELF __numTriangles, SELF __numTriangles + numTri_subMesh)
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__CountWedges)
+	ASSIGN(SELF __numWedges, 0)
+	FOR(i, 0, SELF __numSubMeshes)
+		CALLP1(SELF __file.SetPos, SELF __posSubMeshes + i * 80 + 12)
+		LOCAL_VAR(TINT, numWdg_subMesh, CALLF0(SELF __file.ReadUnsignedLong))
+		ASSIGN(SELF __numWedges, SELF __numWedges + numWdg_subMesh)
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__ReadUVMapping)
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), SELF __curNameInFile))
+	SET_NUM_TVERTS(SELF __curMesh, SELF __numWedges)
+	LOCAL_VAR(TINT, tVertIndex, 0)
+	FOR(i, 0, SELF __numSubMeshes)
+		CALLP1(SELF __file.SetPos, SELF __posSubMeshes + i * 80 + 8)
+		LOCAL_VAR(TINT, posWdg_subMesh, CALLF0(SELF __file.ReadUnsignedLong) + SELF __dataPos)
+		LOCAL_VAR(TINT, numWdg_subMesh, CALLF0(SELF __file.ReadUnsignedLong))
+		FOR(j, 0, numWdg_subMesh)
+			IF(BIT_AND(tVertIndex, 63) == 0)
+				SHOW_PROGRESS_BAR(caption, 25 + 25 * tVertIndex / SELF __numWedges)
+			END_IF	
+			CALLP1(SELF __file.SetPos, posWdg_subMesh + j * 24 + 12)
+			LOCAL_VAR(TFLOAT, u, CALLF0(SELF __file.ReadFloat))
+			LOCAL_VAR(TFLOAT, v, -CALLF0(SELF __file.ReadFloat))
+			LOCAL_VAR(TUVVERT, uvvert, NEW_UVVERT(u, v))
+			SET_TVERT(SELF __curMesh, tVertIndex, uvvert)
+			ASSIGN(tVertIndex, tVertIndex + 1)
+		END_FOR
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__ReadFaces)
+	SET_NUM_FACES(SELF __curMesh, SELF __numTriangles)
+	SET_NUM_TVFACES(SELF __curMesh, SELF __numTriangles)
+	LOCAL_VAR(TINT, faceIndex, 0)
+	LOCAL_VAR(TINT, tVertBase, 0)
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), SELF __curNameInFile))
+	LOCAL_VAR(TINT, numVerts, GET_NUM_VERTS(SELF __curMesh))
+	LOCAL_VAR(TINT, numTVerts, GET_NUM_TVERTS(SELF __curMesh))
+
+	FOR(i, 0, SELF __numSubMeshes)
+		CALLP1(SELF __file.SetPos, SELF __posSubMeshes + i * 80 + 0)
+		LOCAL_VAR(TINT, posTri_subMesh, CALLF0(SELF __file.ReadUnsignedLong) + SELF __dataPos)
+		LOCAL_VAR(TINT, numTri_subMesh, CALLF0(SELF __file.ReadUnsignedLong))
+		LOCAL_VAR(TINT, posWdg_subMesh, CALLF0(SELF __file.ReadUnsignedLong) + SELF __dataPos)
+		LOCAL_VAR(TINT, numWdg_subMesh, CALLF0(SELF __file.ReadUnsignedLong))
+		FOR(j, 0, numTri_subMesh)
+			IF(BIT_AND(faceIndex, 63) == 0)
+				SHOW_PROGRESS_BAR(caption, 50 + 50 * faceIndex / SELF __numTriangles)
+			END_IF	
+			
+			CALLP1(SELF __file.SetPos, posTri_subMesh + j * 6 + 0)
+			LOCAL_VAR(TINT, wdgIdx_0, CALLF0(SELF __file.ReadUnsignedShort))
+			CALLP1(SELF __file.SetPos, posWdg_subMesh + wdgIdx_0 * 24 + 20)
+			LOCAL_VAR(TINT, vertIdx_0, CALLF0(SELF __file.ReadUnsignedShort))
+			LOCAL_VAR(TINT, tVertIdx_0, wdgIdx_0 + tVertBase)
+			
+			CALLP1(SELF __file.SetPos, posTri_subMesh + j * 6 + 2)
+			LOCAL_VAR(TINT, wdgIdx_1, CALLF0(SELF __file.ReadUnsignedShort))
+			CALLP1(SELF __file.SetPos, posWdg_subMesh + wdgIdx_1 * 24 + 20)
+			LOCAL_VAR(TINT, vertIdx_1, CALLF0(SELF __file.ReadUnsignedShort))
+			LOCAL_VAR(TINT, tVertIdx_1, wdgIdx_1 + tVertBase)
+			
+			CALLP1(SELF __file.SetPos, posTri_subMesh + j * 6 + 4)
+			LOCAL_VAR(TINT, wdgIdx_2, CALLF0(SELF __file.ReadUnsignedShort))
+			CALLP1(SELF __file.SetPos, posWdg_subMesh + wdgIdx_2 * 24 + 20)
+			LOCAL_VAR(TINT, vertIdx_2, CALLF0(SELF __file.ReadUnsignedShort))
+			LOCAL_VAR(TINT, tVertIdx_2, wdgIdx_2 + tVertBase)
+			
+			IF(vertIdx_0 >= numVerts)
+				THROW(CALLF5(FormatMsg4, ErrVertIdxOutOfRange, INT_TO_STRING(vertIdx_0), T("0"), INT_TO_STRING(numVerts - 1), CALLF0(SELF __file.GetName)))
+			END_IF
+			IF(vertIdx_1 >= numVerts)
+				THROW(CALLF5(FormatMsg4, ErrVertIdxOutOfRange, INT_TO_STRING(vertIdx_1), T("0"), INT_TO_STRING(numVerts - 1), CALLF0(SELF __file.GetName)))
+			END_IF
+			IF(vertIdx_2 >= numVerts)
+				THROW(CALLF5(FormatMsg4, ErrVertIdxOutOfRange, INT_TO_STRING(vertIdx_2), T("0"), INT_TO_STRING(numVerts - 1), CALLF0(SELF __file.GetName)))
+			END_IF
+			IF(tVertIdx_0 >= numTVerts)
+				THROW(CALLF5(FormatMsg4, ErrTVertIdxOutOfRange, INT_TO_STRING(tVertIdx_0), T("0"), INT_TO_STRING(numTVerts - 1), CALLF0(SELF __file.GetName)))
+			END_IF
+			IF(tVertIdx_1 >= numTVerts)
+				THROW(CALLF5(FormatMsg4, ErrTVertIdxOutOfRange, INT_TO_STRING(tVertIdx_1), T("0"), INT_TO_STRING(numTVerts - 1), CALLF0(SELF __file.GetName)))
+			END_IF
+			IF(tVertIdx_2 >= numTVerts)
+				THROW(CALLF5(FormatMsg4, ErrTVertIdxOutOfRange, INT_TO_STRING(tVertIdx_2), T("0"), INT_TO_STRING(numTVerts - 1), CALLF0(SELF __file.GetName)))
+			END_IF
+			
+			LOCAL_VAR(TFACE, f, NEW_FACE(vertIdx_0, vertIdx_1, vertIdx_2))
+			SET_FACE(SELF __curMesh, faceIndex, f)
+			LOCAL_VAR(TTVFACE, tf, NEW_TVFACE(tVertIdx_0, tVertIdx_1, tVertIdx_2))
+			SET_TVFACE(SELF __curMesh, faceIndex, tf)
+			SET_FACE_MAT(SELF __curMesh, faceIndex, GET_ELEM(SELF __impMtls, i))
+			FOR(k, 0, 3)
+				SET_EDGE_VIS(SELF __curMesh, faceIndex, k, TRUE)
+			END_FOR
+			ASSIGN(faceIndex, faceIndex + 1)
+		END_FOR
+		ASSIGN(tVertBase, tVertBase + numWdg_subMesh)
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__ReadMaterials)
+	CALLP1(SELF __file.SetPos, SELF __posMaterials)
+	LOCAL_VAR(TZENArchive, zarc, CALLF0(NewZENArchive))
+	CALLP1(zarc.ReadHeader, SELF __file)
+	FOR(i, 0, SELF __numSubMeshes)
+		LOCAL_VAR(TSTRING, caption, T("Reading materials"))
+		SHOW_PROGRESS_BAR(caption, 100 * i / SELF __numSubMeshes)
+		LOCAL_VAR(TSTRING, name, CALLF1(zarc.ReadString, SELF __file))
+		LOCAL_VAR(TINT, pos, CALLF0(SELF __file.GetPos))
+		LOCAL_VAR(TZENChunk, zchunk, CALLF1(zarc.ReadChunkStart, SELF __file))
+		IF(CALLF0(zchunk.GetClassName) != T("zCMaterial"))
+			THROW(CALLF3(FormatMsg2, ErrMaterialChunkExpected, HEXFORM(pos), CALLF0(SELF __file.GetName)))
+		END_IF	
+		ASSIGN(name, CALLF0(SELF __file.ReadString))
+		LOCAL_VAR(TINT, matGroup, CALLF0(SELF __file.ReadUnsignedChar))
+		LOCAL_VAR(TINT, blue,  CALLF0(SELF __file.ReadUnsignedChar))
+		LOCAL_VAR(TINT, green, CALLF0(SELF __file.ReadUnsignedChar))
+		LOCAL_VAR(TINT, red,   CALLF0(SELF __file.ReadUnsignedChar))
+		LOCAL_VAR(TINT, alpha, CALLF0(SELF __file.ReadUnsignedChar))
+		LOCAL_VAR(TCOLOR, clr, NEW_COLOR(red / 255., green / 255., blue / 255.))
+		LOCAL_VAR(TFLOAT, smoothAngle, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TSTRING, texture, CALLF0(SELF __file.ReadString))
+		CALLP2(zarc.ReadChunkEnd, SELF __file, zchunk)
+
+		LOCAL_VAR(TMATERIAL, mtl, NEW_MATERIAL(name))
+		APPEND(SELF __impMtls, mtl)
+		SET_DIFFUSE_COLOR(mtl, clr)
+		SET_DIFFUSE_MAP_FILENAME(mtl, texture)
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__EndReadingMesh)
+	LOCAL_VAR(TARRAY(TOBJECT), objects, UPDATE_MESH(SELF __curMesh))
+	FOR(i, 0, SIZE(objects))
+		LOCAL_VAR(TOBJECT, obj, GET_ELEM(objects, i))
+		LOCAL_VAR(TMESH, msh, GET_MESH(obj))
+		LOCAL_VAR(TObjectStats, objStats, CALLF0(NewObjectStats))
+		CALLP1(objStats.SetNameInFile, SELF __curNameInFile)
+		CALLP1(objStats.SetNameInScene, GET_OBJECT_NAME(obj))
+		CALLP1(objStats.SetNumMtls, CALCULATE_NUM_MTLS(obj))
+		CALLP1(objStats.SetNumFaces, CALCULATE_NUM_FACES(obj))
+		CALLP1(objStats.SetNumVertsInFile, CALCULATE_NUM_VERTS(obj))
+		CALLP1(objStats.SetNumVertsInScene, CALLF0(objStats.GetNumVertsInFile))
+		APPEND(SELF __impObjectStats, objStats)
+		IF(i != 0)
+			APPEND(SELF __impObjects, obj)
+		END_IF
+	END_FOR	
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__ReadMrmData)
+	ASSIGN(SELF __mrmVersion, CALLF0(SELF __file.ReadUnsignedShort))
+	ASSIGN(SELF __dataSize, CALLF0(SELF __file.ReadUnsignedLong))
+	ASSIGN(SELF __dataPos, CALLF0(SELF __file.GetPos))
+	CALLP1(SELF __file.SetPos, SELF __dataPos + SELF __dataSize)
+	ASSIGN(SELF __numSubMeshes, CALLF0(SELF __file.ReadUnsignedChar))
+
+	ASSIGN(SELF __posVerts, CALLF0(SELF __file.ReadUnsignedLong) + SELF __dataPos)
+	ASSIGN(SELF __numVerts,  CALLF0(SELF __file.ReadUnsignedLong))
+	LOCAL_VAR(TINT, posTAxes, CALLF0(SELF __file.ReadUnsignedLong) + SELF __dataPos)
+	LOCAL_VAR(TINT, numTAxes,  CALLF0(SELF __file.ReadUnsignedLong))
+	ASSIGN(SELF __posSubMeshes, CALLF0(SELF __file.GetPos))
+	ASSIGN(SELF __posMaterials, SELF __posSubMeshes + 80 * SELF __numSubMeshes)
+	
+	CALLP0(SELF __ReadMaterials)
+	CALLP0(SELF __CreateObject)
+	CALLP0(SELF __ReadVertices)
+	CALLP0(SELF __CountTriangles)
+	CALLP0(SELF __CountWedges)
+	CALLP0(SELF __ReadUVMapping)
+	CALLP0(SELF __ReadFaces)
+	CALLP0(SELF __EndReadingMesh)
+END_MEMBER_PROC
+
+// Public section:
+// Initialize
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __scaleCoef, 1.0)
+	ASSIGN(SELF __file, CALLF0(NewFile))
+	ASSIGN(SELF __impMtls, EMPTY_ARRAY(TMATERIAL))
+	ASSIGN(SELF __impObjects, EMPTY_ARRAY(TOBJECT))
+	ASSIGN(SELF __curObj, INVALID_OBJECT)
+	ASSIGN(SELF __curNameInFile, EMPTY_STRING)
+	ASSIGN(SELF __curMesh, INVALID_MESH)
+	ASSIGN(SELF __impObjectStats, EMPTY_ARRAY(TObjectStats))
+	ASSIGN(SELF __mrmVersion, 0)
+	ASSIGN(SELF __dataPos, 0)
+	ASSIGN(SELF __dataSize, 0)
+	ASSIGN(SELF __numSubMeshes, 0)
+	ASSIGN(SELF __posSubMeshes, 0)
+	ASSIGN(SELF __posVerts, 0)
+	ASSIGN(SELF __numVerts, 0)
+	ASSIGN(SELF __posMaterials, 0)
+	ASSIGN(SELF __numTriangles, 0)
+	ASSIGN(SELF __numWedges, 0)
+END_MEMBER_PROC
+
+// Read mrm file; throws exception if failed
+MEMBER_PROC_2(ReadMRMFile, TSTRING, filename, TSpaceTransform, spaceTransform)
+	CALLP0(SELF Init)
+	CALLP1(SELF __SetSpaceTransform, spaceTransform)
+	TRY
+		CALLP2(SELF __file.Open, filename, T("rb"))
+		LOCAL_VAR(TBOOL, fileBeginning, TRUE)
+		WHILE(NOT(CALLF0(SELF __file.Eof)))
+			LOCAL_VAR(TINT, typ, CALLF0(SELF __file.ReadUnsignedShort))
+			IF(fileBeginning AND typ != 0xB100)
+				THROW(CALLF2(FormatMsg1, ErrFileIsNotMRM, CALLF0(SELF __file.GetName)))
+			END_IF
+			ASSIGN(fileBeginning, FALSE)
+			LOCAL_VAR(TINT, sz,  CALLF0(SELF __file.ReadUnsignedLong))
+			LOCAL_VAR(TINT, chunkPos, CALLF0(SELF __file.GetPos))
+			IF(typ == 0xB100)
+				CALLP0(SELF __ReadMrmData)
+			ELSE_IF(typ == 0xB1FF)
+				BREAK
+			END_IF
+			CALLP1(SELF __file.SetPos, chunkPos + sz)
+		END_WHILE
+		CALLP0(SELF __file.Close)		
+	END_TRY
+	CATCH
+		// CALLP1(DelObjects, SELF __impObjects)
+		CALLP0(SELF __file.Close)		
+		THROW_AGAIN
+	END_CATCH
+END_MEMBER_PROC
+
+// Get statistics for imported objects
+MEMBER_FUNC_0(REF(TARRAY(TObjectStats)), GetObjectStats)
+	RETURN_VAL(SELF __impObjectStats)
+END_MEMBER_FUNC
+
+END_CLASS // TMRMFileLoader
+
+
+// Create an object of the "TMRMFileLoader" class
+GLOBAL_FUNC_0(TMRMFileLoader, NewMRMFileLoader)
+	LOCAL_VAR(TMRMFileLoader, loader, NEW_VAL(TMRMFileLoader))
+	CALLP0(loader.Init)
+	RETURN_VAL(loader)
+END_GLOBAL_FUNC
+
+#endif // MRM_FILE_LOADER_META

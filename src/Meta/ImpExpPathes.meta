@@ -1,0 +1,28 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        ImpExpPathes.meta
+// Purpose:     Functions to get necessary pathes in the operation system.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef IMP_EXP_PATHES_META
+#define IMP_EXP_PATHES_META
+
+#include "Meta.h"
+
+// pathes to configuration files
+#define DLG_INPUT_FILE_PATH		(PLUGCFG_DIR + T("KrxImpExpDlgInput.bin"))
+#define DLG_OUTPUT_FILE_PATH	(PLUGCFG_DIR + T("KrxImpExpDlgOutput.bin"))
+#define UI_CFG_FILE_PATH		(PLUGCFG_DIR + T("KrxImpExpUI.cfg"))
+
+#ifdef __C4D_H // cinema4d pathes
+#define UI_EXE_FILE_PATH		(ROOT_DIR + T("plugins\\KrxImpExp\\wxImpExpUI.exe"))
+#define SAMPLE_MESHES_DIR_PATH	(ROOT_DIR + T("plugins\\KrxImpExp\\sample_meshes\\"))
+#else // gmax, 3ds max, blender pathes
+#define UI_EXE_FILE_PATH		(ROOT_DIR + T("KrxImpExp\\wxImpExpUI.exe"))
+#define SAMPLE_MESHES_DIR_PATH	(ROOT_DIR + T("KrxImpExp\\sample_meshes\\"))
+#endif
+
+#endif // IMP_EXP_PATHES_META

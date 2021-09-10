@@ -1,0 +1,87 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        3dsReadChunk.meta
+// Purpose:     Definition of T3DSReadChunk class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef _3DS_READ_CHUNK_META
+#define _3DS_READ_CHUNK_META
+
+#include "Meta.h"
+#include "File.meta"
+
+CLASS(T3DSReadChunk)
+
+// Private section:
+MEMBER_VAR(TINT,          __chunkPos)
+MEMBER_VAR(TINT,          __chunkID)
+MEMBER_VAR(TINT,          __chunkSize)
+MEMBER_VAR(TINT,          __dataSize)
+
+// Public section:
+// Initialize a new chunk
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __chunkPos, 0)
+	ASSIGN(SELF __chunkID, 0)
+	ASSIGN(SELF __chunkSize, 0)
+	ASSIGN(SELF __dataSize, 0)
+END_MEMBER_PROC
+
+// Read header of chunk at the current position
+MEMBER_PROC_1(ReadHeader, TFile, file)
+	ASSIGN(SELF __chunkPos, CALLF0(file.GetPos))
+	ASSIGN(SELF __chunkID, CALLF0(file.ReadUnsignedShort))
+	ASSIGN(SELF __chunkSize, CALLF0(file.ReadUnsignedLong))
+	ASSIGN(SELF __dataSize, 0)
+END_MEMBER_PROC
+
+// Skip rest of the current chunk
+MEMBER_PROC_1(SkipRest, TFile, file)
+	LOCAL_VAR(TINT, newPos, SELF __chunkPos + SELF __chunkSize)
+	CALLP1(file.SetPos, newPos)
+END_MEMBER_PROC
+
+// Get chunk id
+MEMBER_FUNC_0(TINT, GetID)
+	RETURN_VAL(SELF __chunkID)
+END_MEMBER_FUNC
+
+// Get chunk position relative to the file's set
+MEMBER_FUNC_0(TINT, GetPos)
+	RETURN_VAL(SELF __chunkPos)
+END_MEMBER_FUNC
+
+// Get chunk size
+MEMBER_FUNC_0(TINT, GetSize)
+	RETURN_VAL(SELF __chunkSize)
+END_MEMBER_FUNC
+
+// Set chunk data size
+MEMBER_PROC_1(SetDataSize, TINT, dataSize)
+	ASSIGN(SELF __dataSize, dataSize)	
+END_MEMBER_PROC
+
+// Get chunk data size
+MEMBER_FUNC_0(TINT, GetDataSize)
+	RETURN_VAL(SELF __dataSize)
+END_MEMBER_FUNC
+
+// Get size of all sub-chunks
+MEMBER_FUNC_0(TINT, GetSubChunksSize)
+	RETURN_VAL(SELF __chunkSize - SELF __dataSize - 6)
+END_MEMBER_FUNC
+
+END_CLASS // T3DSReadChunk
+
+
+// Global function to create chunk
+GLOBAL_FUNC_0(T3DSReadChunk, New3DSReadChunk)
+	LOCAL_VAR(T3DSReadChunk, chunk, NEW_VAL(T3DSReadChunk))
+	CALLP0(chunk.Init)
+	RETURN_VAL(chunk)
+END_GLOBAL_FUNC
+
+#endif // _3DS_READ_CHUNK_META

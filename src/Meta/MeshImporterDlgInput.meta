@@ -1,0 +1,109 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        MeshImporterDlgInput.meta
+// Purpose:     Definition of TMeshImporterDlgInput class.
+// Author:      Vitaly Baranov
+// Created:     June 6, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef MESH_IMPORTER_DLG_INPUT_META
+#define MESH_IMPORTER_DLG_INPUT_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "3dsImporterDefs.meta"
+
+// Input dialog data for compiled mesh importer
+CLASS(TMeshImporterDlgInput)
+
+// Private section:
+MEMBER_VAR(TSTRING,         __fileFormat)
+MEMBER_VAR(TSTRING,         __importFileName)
+MEMBER_VAR(TINT,            __importFileSize)
+MEMBER_VAR(TINT,            __curSceneMode)
+MEMBER_VAR(TFLOAT,          __systemUnitsPerFileUnit)
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __fileFormat, EMPTY_STRING)
+	ASSIGN(SELF __importFileName, EMPTY_STRING)
+	ASSIGN(SELF __importFileSize, 0)
+	ASSIGN(SELF __curSceneMode, CURSCN_REPLACE_SCENE)
+	ASSIGN(SELF __systemUnitsPerFileUnit, 1)
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(Write, TFile, f)
+	CALLP1(f.WriteString, SELF __fileFormat)
+	CALLP1(f.WriteString, SELF __importFileName)
+	CALLP1(f.WriteUnsignedLong, SELF __importFileSize)
+	CALLP1(f.WriteUnsignedChar, SELF __curSceneMode)
+	CALLP1(f.WriteFloat,  SELF __systemUnitsPerFileUnit)
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(Read, TFile, f)
+	ASSIGN(SELF __fileFormat, CALLF0(f.ReadString))
+	ASSIGN(SELF __importFileName, CALLF0(f.ReadString))
+	ASSIGN(SELF __importFileSize, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __curSceneMode, CALLF0(f.ReadUnsignedChar))
+	ASSIGN(SELF __systemUnitsPerFileUnit, CALLF0(f.ReadFloat))
+END_MEMBER_PROC
+
+// File format ("ZEN" or "MSH" or "MRM")
+MEMBER_PROC_1(SetFileFormat, TSTRING, fileFormat)
+	ASSIGN(SELF __fileFormat, fileFormat)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TSTRING), GetFileFormat)
+	RETURN_VAL(SELF __fileFormat)
+END_MEMBER_FUNC
+
+// Import file name
+MEMBER_PROC_1(SetImportFileName, TSTRING, importFileName)
+	ASSIGN(SELF __importFileName, importFileName)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TSTRING), GetImportFileName)
+	RETURN_VAL(SELF __importFileName)
+END_MEMBER_FUNC
+	
+// Import file size
+MEMBER_PROC_1(SetImportFileSize, TINT, importFileSize)
+	ASSIGN(SELF __importFileSize, importFileSize)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetImportFileSize)
+	RETURN_VAL(SELF __importFileSize)
+END_MEMBER_FUNC
+
+// Selected mode (one of constants CURSCN_...)
+MEMBER_PROC_1(SetCurrentSceneMode, TINT, curSceneMode)
+	ASSIGN(SELF __curSceneMode, curSceneMode)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetCurrentSceneMode)
+	RETURN_VAL(SELF __curSceneMode)
+END_MEMBER_FUNC
+
+// Default (for 3D Editor) number of system units per 1 file unit
+MEMBER_PROC_1(SetSystemUnitsPerFileUnit, TFLOAT, scaleCoef)
+	ASSIGN(SELF __systemUnitsPerFileUnit, scaleCoef)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TFLOAT, GetSystemUnitsPerFileUnit)
+	RETURN_VAL(SELF __systemUnitsPerFileUnit)
+END_MEMBER_FUNC
+
+END_CLASS // TMeshImporterDlgInput
+
+// Global function to create object of class TMeshImporterDlgInput
+GLOBAL_FUNC_0(TMeshImporterDlgInput, NewMeshImporterDlgInput)
+	LOCAL_VAR(TMeshImporterDlgInput, dlgInput, NEW_VAL(TMeshImporterDlgInput))
+	CALLP0(dlgInput.Init)
+	RETURN_VAL(dlgInput)
+END_GLOBAL_FUNC
+
+#endif // MESH_IMPORTER_DLG_INPUT_META

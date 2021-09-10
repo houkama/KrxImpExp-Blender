@@ -1,0 +1,28 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        AscTypes.meta
+// Purpose:     Constants ASCTYPE_... and MODELTYPE_...
+// Author:      Vitaly Baranov
+// Created:     February 15, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef ASCTYPES_META
+#define ASCTYPES_META
+
+#include "Meta.h"
+
+// ASC file types
+#define ASCTYPE_MORPH_MESH		1
+#define ASCTYPE_MORPH_ANIM		2
+#define ASCTYPE_STATIC_MESH		4
+#define ASCTYPE_DYNAMIC_MESH	8
+#define ASCTYPE_DYNAMIC_ANIM	16
+
+// Types of models
+#define MODELTYPE_UNKNOWN	0
+#define MODELTYPE_MORPH		(ASCTYPE_MORPH_MESH + ASCTYPE_MORPH_ANIM)
+#define MODELTYPE_STATIC	(ASCTYPE_STATIC_MESH)
+#define MODELTYPE_DYNAMIC	(ASCTYPE_DYNAMIC_MESH + ASCTYPE_DYNAMIC_ANIM)
+
+#endif // ASCTYPES_META

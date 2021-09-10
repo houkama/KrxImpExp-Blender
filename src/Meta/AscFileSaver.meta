@@ -1,0 +1,648 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        AscFileSaver.meta
+// Purpose:     Definition of T3DSFileSaver class.
+// Author:      Vitaly Baranov
+// Created:     January 31, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef ASC_FILE_SAVER_META
+#define ASC_FILE_SAVER_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "PosTrack.meta"
+#include "RotTrack.meta"
+#include "SpaceTransform.meta"
+#include "TimeTransform.meta"
+#include "DefaultMaterial.meta"
+
+// Class for saving a asc file
+CLASS(TASCFileSaver)
+
+// Private section:
+MEMBER_VAR(TFile,             __file)
+MEMBER_VAR(TFLOAT,            __scaleCoef)
+MEMBER_VAR(TTimeTransform,    __timeTransform)
+MEMBER_VAR(TModelHierarchy,   __modelHierarchy)
+MEMBER_VAR(TSTRING,           __modelPrefix)
+MEMBER_VAR(TINT,              __modelType)
+MEMBER_VAR(TARRAY(TSTRING),   __objShortNames)
+MEMBER_VAR(TARRAY(TBOOL),     __objSelectFlags)
+MEMBER_VAR(TARRAY(TSTRING),   __parentShortNames)
+MEMBER_VAR(TARRAY(TINT),      __objTypes)
+MEMBER_VAR(TBOOL,             __exportAnimation)
+MEMBER_VAR(TARRAY(TMATERIAL),     __expMtls)
+MEMBER_VAR(TARRAY(TMaterialDesc), __addMtls)
+MEMBER_VAR(TOBJECT,           __curObj)
+MEMBER_VAR(TSTRING,           __curObjName)
+MEMBER_VAR(TSTRING,           __curObjShortName)
+MEMBER_VAR(TARRAY(TOBJECT),   __skinnedObjs)
+MEMBER_VAR(TARRAY(TPosTrack), __posTracks)
+MEMBER_VAR(TARRAY(TRotTrack), __rotTracks)
+
+MEMBER_PROC_1(__WriteLine, TSTRING, str)
+	CALLP1(SELF __file.WriteLine, str)
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__WriteASCVersion)
+	CALLP1(SELF __WriteLine, T("*3DSMAX_ASCIIEXPORT\t110"))
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__WriteComment)
+	CALLP1(SELF __WriteLine, T("*COMMENT \"[ Kerrax ASCII Model Exporter ] - ") + T(__DATE__) + T("\""))
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__WriteSceneInfo)
+	LOCAL_VAR(TSTRING, caption, T("Writing scene information"))
+	SHOW_PROGRESS_BAR(caption, 1)
+	CALLP1(SELF __WriteLine, T("*SCENE {"))
+	LOCAL_VAR(TINT, firstFrame, 0)
+	LOCAL_VAR(TINT, lastFrame, 100)
+	LOCAL_VAR(TINT, frameSpeed, 25)
+	LOCAL_VAR(TINT, ticksPerFrame, 192)
+	IF(SELF __exportAnimation)
+		ASSIGN(firstFrame, CALLF0(SELF __timeTransform.GetStartFrameInFile))
+		ASSIGN(lastFrame, CALLF0(SELF __timeTransform.GetEndFrameInFile))
+		ASSIGN(frameSpeed, GET_FRAME_RATE)
+		ASSIGN(ticksPerFrame, GET_TICKS_PER_FRAME)
+	END_IF
+	CALLP1(SELF __WriteLine, T("\t*SCENE_FILENAME \"") + GET_SCENE_FILENAME + T("\""))
+	CALLP1(SELF __WriteLine, T("\t*SCENE_FIRSTFRAME ") + INT_TO_STRING(firstFrame))
+	CALLP1(SELF __WriteLine, T("\t*SCENE_LASTFRAME ") + INT_TO_STRING(lastFrame))
+	CALLP1(SELF __WriteLine, T("\t*SCENE_FRAMESPEED ") + INT_TO_STRING(frameSpeed))
+	CALLP1(SELF __WriteLine, T("\t*SCENE_TICKSPERFRAME ") + INT_TO_STRING(ticksPerFrame))
+	CALLP1(SELF __WriteLine, T("\t*SCENE_BACKGROUND_STATIC 0\t0\t0"))
+	CALLP1(SELF __WriteLine, T("\t*SCENE_AMBIENT_STATIC 0.2\t0.2\t0.2"))
+	CALLP1(SELF __WriteLine, T("}"))
+END_MEMBER_PROC
+
+MEMBER_FUNC_1(TSTRING, __ColorToString, TCOLOR, clr)
+	RETURN_VAL(FLOAT_TO_STRING(GET_RED(clr)) + T("\t") + FLOAT_TO_STRING(GET_GREEN(clr)) + T("\t") + FLOAT_TO_STRING(GET_BLUE(clr)))
+END_MEMBER_FUNC
+
+MEMBER_PROC_0(__EnumerateMaterials)
+	// fill list with all materials used by the model
+	// this will returns result in the __expMtls and __materialRefs member variables
+	FOR(i, 0, SIZE(SELF __objShortNames))
+		IF(GET_ELEM(SELF __objSelectFlags, i))
+			ASSIGN(SELF __curObjShortName, GET_ELEM(SELF __objShortNames, i))
+			ASSIGN(SELF __curObjName, SELF __modelPrefix + SELF __curObjShortName)
+			ASSIGN(SELF __curObj, FIND_OBJECT_BY_NAME(SELF __curObjName))
+			IF(SELF __curObj != INVALID_OBJECT)
+				LOCAL_VAR(TNameAnalyzer, na, CALLF1(AnalyzeName, SELF __curObjName))
+				// materials only for meshes
+				IF(CALLF0(na.GetObjectType) == OBJTYPE_MESH)
+					// get a multimaterial assigned to the object
+					LOCAL_VAR(TSTRING, caption, T("Writing materials"))
+					SHOW_PROGRESS_BAR(caption, 50 * i / SIZE(SELF __objShortNames))
+					LOCAL_VAR(TMESH, msh, GET_MESH(SELF __curObj))
+					LOCAL_VAR(TINT, numFaces, GET_NUM_FACES(msh))
+					LOCAL_VAR(TBOOL, defaultMatCreated, FALSE)
+					FOR(j, 0, numFaces)
+						LOCAL_VAR(TMATERIAL, mat, GET_FACE_MAT(msh, j))
+						IF(mat == INVALID_MATERIAL)
+							IF(NOT(defaultMatCreated))
+								LOCAL_VAR(TMaterialDesc, matDesc, GetDefaultMaterial(SELF __curObj))
+								LOCAL_VAR(TBOOL, found, FALSE)
+								FOR(k, 0, SIZE(SELF __addMtls))
+									IF(CALLF0(GET_ELEM(SELF __addMtls, k).GetMaterialName) == CALLF0(matDesc.GetMaterialName))
+										ASSIGN(found, TRUE)
+										BREAK
+									END_IF
+								END_FOR
+								IF(NOT(found))
+									APPEND(SELF __addMtls, matDesc)
+								END_IF
+								ASSIGN(defaultMatCreated, TRUE)
+							END_IF
+						ELSE
+							LOCAL_VAR(TBOOL, found, FALSE)
+							FOR(k, 0, SIZE(SELF __expMtls))
+								IF(GET_ELEM(SELF __expMtls, k) == mat)
+									ASSIGN(found, TRUE)
+									BREAK
+								END_IF
+							END_FOR
+							IF(NOT(found))
+								APPEND(SELF __expMtls, mat)
+							END_IF
+						END_IF
+					END_FOR
+				END_IF
+			END_IF
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__WriteMaterialList)
+	CALLP0(SELF __EnumerateMaterials)
+	LOCAL_VAR(TINT, totalCount, SIZE(SELF __expMtls) + SIZE(SELF __addMtls))
+	
+	// write list of materials to file
+	IF(totalCount != 0)
+		CALLP1(SELF __WriteLine, T("*MATERIAL_LIST {"))
+		CALLP1(SELF __WriteLine, T("\t*MATERIAL_COUNT 1"))
+		CALLP1(SELF __WriteLine, T("\t*MATERIAL 0 {"))
+		CALLP1(SELF __WriteLine, T("\t\t*MATERIAL_NAME \"MultiMtl #0\""))
+		CALLP1(SELF __WriteLine, T("\t\t*MATERIAL_CLASS \"Multi/Sub-Object\""))
+		CALLP1(SELF __WriteLine, T("\t\t*NUMSUBMTLS ") + INT_TO_STRING(totalCount))
+		FOR(i, 0, totalCount)
+			LOCAL_VAR(TSTRING, matName, EMPTY_STRING)
+			LOCAL_VAR(TCOLOR, diffuseColor, BLACK_COLOR)
+			LOCAL_VAR(TSTRING, diffuseMap, EMPTY_STRING)
+			IF(i < SIZE(SELF __expMtls))
+				LOCAL_VAR(TMATERIAL, mat, GET_ELEM(SELF __expMtls, i))
+				ASSIGN(matName, GET_MATERIAL_NAME(mat))
+				ASSIGN(diffuseColor, GET_DIFFUSE_COLOR(mat))
+				ASSIGN(diffuseMap, GET_DIFFUSE_MAP_FILENAME(mat))
+			ELSE
+				LOCAL_VAR(REF(TMaterialDesc), matDesc, GET_ELEM(SELF __addMtls, i - SIZE(SELF __expMtls)))
+				ASSIGN(matName, CALLF0(matDesc.GetMaterialName))
+				ASSIGN(diffuseColor, CALLF0(matDesc.GetDiffuseColor))
+				ASSIGN(diffuseMap, CALLF0(matDesc.GetDiffuseMapFilename))
+			END_IF
+			CALLP1(SELF __WriteLine, T("\t\t*SUBMATERIAL ") + INT_TO_STRING(i) + T(" {"))
+			CALLP1(SELF __WriteLine, T("\t\t\t*MATERIAL_NAME \"") + matName + T("\""))
+			CALLP1(SELF __WriteLine, T("\t\t\t*MATERIAL_CLASS \"Standard\""))
+			CALLP1(SELF __WriteLine, T("\t\t\t*MATERIAL_DIFFUSE ") + CALLF1(SELF __ColorToString, diffuseColor))
+			LOCAL_VAR(TSTRING, mapFileName, diffuseMap)
+			IF(diffuseMap != EMPTY_STRING)
+				CALLP1(SELF __WriteLine, T("\t\t\t*MAP_DIFFUSE {"))
+				CALLP1(SELF __WriteLine, T("\t\t\t\t*BITMAP \"") + diffuseMap + T("\""))
+				CALLP1(SELF __WriteLine, T("\t\t\t}"))
+			END_IF
+			CALLP1(SELF __WriteLine, T("\t\t}"))
+		END_FOR
+		CALLP1(SELF __WriteLine, T("\t}"))
+		CALLP1(SELF __WriteLine, T("}"))
+	END_IF
+END_MEMBER_PROC
+
+MEMBER_FUNC_1(TSTRING, __Point3ToString, TPOINT3, pt)
+	RETURN_VAL(FLOAT_TO_STRING(GET_X(pt)) + T("\t") + FLOAT_TO_STRING(GET_Y(pt)) + T("\t") + FLOAT_TO_STRING(GET_Z(pt)))
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(__WriteNodeTM, TMATRIX3, tm)
+	LOCAL_VAR(TPOINT3, trans, GET_TRANSLATION_PART(tm))
+	LOCAL_VAR(TQUAT, q, GET_ROTATION_PART(tm))
+	LOCAL_VAR(TMATRIX3, mat, MULMATMAT(ROTATION_MATRIX(q), TRANSLATION_MATRIX(trans)))
+	CALLP1(SELF __WriteLine, T("\t*NODE_TM {"))
+	CALLP1(SELF __WriteLine, T("\t\t*NODE_NAME \"") + SELF __curObjShortName + T("\""))
+	CALLP1(SELF __WriteLine, T("\t\t*TM_ROW0 ") + CALLF1(SELF __Point3ToString, GET_ROW0(mat)))
+	CALLP1(SELF __WriteLine, T("\t\t*TM_ROW1 ") + CALLF1(SELF __Point3ToString, GET_ROW1(mat)))
+	CALLP1(SELF __WriteLine, T("\t\t*TM_ROW2 ") + CALLF1(SELF __Point3ToString, GET_ROW2(mat)))
+	CALLP1(SELF __WriteLine, T("\t\t*TM_ROW3 ") + CALLF1(SELF __Point3ToString, GET_ROW3(mat) * SELF __scaleCoef))
+	CALLP1(SELF __WriteLine, T("\t\t*TM_POS ") + CALLF1(SELF __Point3ToString, trans * SELF __scaleCoef))
+	CALLP1(SELF __WriteLine, T("\t\t*TM_ROTAXIS ") + CALLF1(SELF __Point3ToString, GET_AXIS(q)))
+	CALLP1(SELF __WriteLine, T("\t\t*TM_ROTANGLE ") + FLOAT_TO_STRING(GET_ANGLE(q)))
+	CALLP1(SELF __WriteLine, T("\t\t*TM_SCALE 1\t1\t1"))
+	CALLP1(SELF __WriteLine, T("\t\t*TM_SCALEAXIS 0\t0\t0"))
+	CALLP1(SELF __WriteLine, T("\t\t*TM_SCALEAXISANG 0\t0\t0"))
+	CALLP1(SELF __WriteLine, T("\t}"))
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__WriteMaterialRef, TINT, matRef)
+	IF(matRef != -1)
+		CALLP1(SELF __WriteLine, T("\t*MATERIAL_REF ") + INT_TO_STRING(matRef))
+	END_IF
+END_MEMBER_PROC
+
+MEMBER_FUNC_1(TINT, __TransformTime, TINT, frameInScene)
+	LOCAL_VAR(TINT, a, CALLF0(SELF __timeTransform.GetStartFrameInScene))
+	LOCAL_VAR(TINT, b, CALLF0(SELF __timeTransform.GetStartFrameInFile))
+	LOCAL_VAR(TINT, frameInFile, frameInScene - a + b)
+	RETURN_VAL(frameInFile)
+END_MEMBER_FUNC
+
+MEMBER_PROC_0(__WriteMesh)
+	// get mesh's parameters
+	LOCAL_VAR(TMESH, msh, GET_MESH(SELF __curObj))
+	LOCAL_VAR(TINT, numVerts, GET_NUM_VERTS(msh))
+	LOCAL_VAR(TINT, numFaces, GET_NUM_FACES(msh))
+
+	// begin mesh writing
+	IF(IS_SKIN_OBJECT(SELF __curObj) AND (SELF __modelType == MODELTYPE_DYNAMIC))
+		CALLP1(SELF __WriteLine, T("\t*MESH_SOFTSKIN {"))
+		APPEND(SELF __skinnedObjs, SELF __curObj)
+	ELSE
+		CALLP1(SELF __WriteLine, T("\t*MESH {"))
+	END_IF
+	LOCAL_VAR(TINT, t, 0)
+	IF((SELF __modelType == MODELTYPE_MORPH) AND (SELF __exportAnimation))
+		LOCAL_VAR(TINT, frameInFile, CALLF1(SELF __TransformTime, GET_CURRENT_FRAME))
+		ASSIGN(t, frameInFile * GET_TICKS_PER_FRAME)
+	END_IF
+	CALLP1(SELF __WriteLine, T("\t\t*TIMEVALUE ") + INT_TO_STRING(t))
+	CALLP1(SELF __WriteLine, T("\t\t*MESH_NUMVERTEX ") + INT_TO_STRING(numVerts))
+	CALLP1(SELF __WriteLine, T("\t\t*MESH_NUMFACES ") + INT_TO_STRING(numFaces))
+	
+	// write vertices
+	CALLP1(SELF __WriteLine, T("\t\t*MESH_VERTEX_LIST {"))
+	// prepare matrix to transform vertices' coordinates to world coordinate system
+	LOCAL_VAR(TMATRIX3, transform, GET_OBJECT_TRANSFORM(SELF __curObj))
+	IF(SELF __modelType == MODELTYPE_MORPH)
+		ASSIGN(transform, MULMATMAT(transform, INVERSE(GET_TRANSFORM(SELF __curObj))))
+	END_IF
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Writing '%1'"), SELF __curObjShortName))
+	FOR(i, 0, numVerts)
+		IF(BIT_AND(i, 63) == 0)
+			SHOW_PROGRESS_BAR(caption, 10 * i / numVerts)
+		END_IF
+		LOCAL_VAR(TPOINT3, pt, GET_VERT(msh, i))
+		ASSIGN(pt, MULVECMAT(pt, transform) * SELF __scaleCoef)
+		CALLP1(SELF __WriteLine, T("\t\t\t*MESH_VERTEX ") + INT_TO_STRING(i) + T("\t") + CALLF1(SELF __Point3ToString, pt))
+	END_FOR
+	CALLP1(SELF __WriteLine, T("\t\t}"))
+	
+	// determinant of the transformation matrix
+	LOCAL_VAR(TFLOAT, det, DETERMINANT(transform))
+	
+	// write faces
+	CALLP1(SELF __WriteLine, T("\t\t*MESH_FACE_LIST {"))
+	ASSIGN(caption, CALLF2(FormatMsg1, T("Writing '%1'"), SELF __curObjShortName))
+	FOR(i, 0, numFaces)
+		IF(BIT_AND(i, 31) == 0)
+			SHOW_PROGRESS_BAR(caption, 10 + 20 * i / numFaces)
+		END_IF
+		// getting indices of face's vertices
+		LOCAL_VAR(TFACE, fc, GET_FACE(msh, i))
+		LOCAL_VAR(TINT, vA, GET_FACE_VERT(fc, 0))
+		LOCAL_VAR(TINT, vB, GET_FACE_VERT(fc, 1))
+		LOCAL_VAR(TINT, vC, GET_FACE_VERT(fc, 2))
+		LOCAL_VAR(TINT, edgeAB, 0)
+		IF(GET_EDGE_VIS(msh, i, 0))
+			ASSIGN(edgeAB, 1)
+		END_IF
+		LOCAL_VAR(TINT, edgeBC, 0)
+		IF(GET_EDGE_VIS(msh, i, 1))
+			ASSIGN(edgeBC, 1)
+		END_IF
+		LOCAL_VAR(TINT, edgeCA, 0)
+		IF(GET_EDGE_VIS(msh, i, 2))
+			ASSIGN(edgeCA, 1)
+		END_IF
+		// inverting order of indices if determinant < 0
+		IF(det < 0)
+			LOCAL_VAR(TINT, tmp, vA)
+			ASSIGN(vA, vC)
+			ASSIGN(vC, tmp)
+			ASSIGN(tmp, edgeAB)
+			ASSIGN(edgeAB, edgeBC)
+			ASSIGN(edgeBC, tmp)
+		END_IF
+		
+		// getting material and smoothing group
+		LOCAL_VAR(TINT, smGroup, GET_FACE_SMOOTH_GROUP(msh, i))
+		LOCAL_VAR(TMATERIAL, mat, GET_FACE_MAT(msh, i))
+		LOCAL_VAR(TINT, matIndex, 0)
+		IF(mat == INVALID_MATERIAL)
+			LOCAL_VAR(TSTRING, defMatName, CALLF1(GetDefaultMaterialName, SELF __curObj))
+			FOR(j, 0, SIZE(SELF __addMtls))
+				IF(CALLF0(GET_ELEM(SELF __addMtls, j).GetMaterialName) == defMatName)
+					ASSIGN(matIndex, j + SIZE(SELF __expMtls))
+					BREAK
+				END_IF
+			END_FOR
+		ELSE
+			FOR(j, 0, SIZE(SELF __expMtls))
+				IF(GET_ELEM(SELF __expMtls, j) == mat)
+					ASSIGN(matIndex, j)
+					BREAK
+				END_IF
+			END_FOR
+		END_IF
+		
+		// writing info to file
+		LOCAL_VAR(TSTRING, str, T("\t\t\t*MESH_FACE    ") + INT_TO_STRING(i))
+		ASSIGN(str, str  + T(":    A:    ") + INT_TO_STRING(vA))
+		ASSIGN(str, str  + T(" B:    ") + INT_TO_STRING(vB))
+		ASSIGN(str, str  + T(" C:    ") + INT_TO_STRING(vC))
+		ASSIGN(str, str  + T(" AB:    ") + INT_TO_STRING(edgeAB))
+		ASSIGN(str, str  + T(" BC:    ") + INT_TO_STRING(edgeAB))
+		ASSIGN(str, str  + T(" CA:    ") + INT_TO_STRING(edgeAB))
+		ASSIGN(str, str  + T("\t *MESH_SMOOTHING ") + INT_TO_STRING(smGroup))
+		ASSIGN(str, str  + T(" \t*MESH_MTLID ") + INT_TO_STRING(matIndex))
+		CALLP1(SELF __WriteLine, str)
+	END_FOR
+	CALLP1(SELF __WriteLine, T("\t\t}"))
+	
+	// write texture vertices
+	LOCAL_VAR(TINT, numTVerts, GET_NUM_TVERTS(msh))
+	IF((numTVerts != 0) AND NOT((SELF __modelType == MODELTYPE_MORPH) AND (SELF __exportAnimation)))
+		CALLP1(SELF __WriteLine, T("\t\t*MESH_NUMTVERTEX ") + INT_TO_STRING(numTVerts))
+		CALLP1(SELF __WriteLine, T("\t\t*MESH_TVERTLIST {"))
+		ASSIGN(caption, CALLF2(FormatMsg1, T("Writing '%1'"), SELF __curObjShortName))
+		FOR(i, 0, numTVerts)
+			IF(BIT_AND(i, 63) == 0)
+				SHOW_PROGRESS_BAR(caption, 30 + 10 * i / numTVerts)
+			END_IF
+			LOCAL_VAR(TUVVERT, uv, GET_TVERT(msh, i))
+			LOCAL_VAR(TFLOAT, u, GET_U(uv))
+			LOCAL_VAR(TFLOAT, v, GET_V(uv))
+			LOCAL_VAR(TSTRING, str, T("\t\t\t*MESH_TVERT ") + INT_TO_STRING(i))
+			ASSIGN(str, str + T("\t") + FLOAT_TO_STRING(u))
+			ASSIGN(str, str + T("\t") + FLOAT_TO_STRING(v))
+			ASSIGN(str, str + T("\t0"))
+			CALLP1(SELF __WriteLine, str)
+		END_FOR
+		CALLP1(SELF __WriteLine, T("\t\t}"))
+	END_IF
+	
+	// write texture faces
+	LOCAL_VAR(TINT, numTVFaces, GET_NUM_TVFACES(msh))
+	IF((numTVerts != 0) AND NOT((SELF __modelType == MODELTYPE_MORPH) AND (SELF __exportAnimation)))
+		CALLP1(SELF __WriteLine, T("\t\t*MESH_NUMTVFACES ") + INT_TO_STRING(numTVFaces))
+		CALLP1(SELF __WriteLine, T("\t\t*MESH_TFACELIST {"))
+		ASSIGN(caption, CALLF2(FormatMsg1, T("Writing '%1'"), SELF __curObjShortName))
+		FOR(i, 0, numTVFaces)
+			IF(BIT_AND(i, 31) == 0)
+				SHOW_PROGRESS_BAR(caption, 40 + 20 * i / numTVFaces)
+			END_IF
+			// getting indices of texture vertices of face
+			LOCAL_VAR(TTVFACE, tvfc, GET_TVFACE(msh, i))
+			LOCAL_VAR(TINT, tA, GET_TVFACE_VERT(tvfc, 0))
+			LOCAL_VAR(TINT, tB, GET_TVFACE_VERT(tvfc, 1))
+			LOCAL_VAR(TINT, tC, GET_TVFACE_VERT(tvfc, 2))
+			// inverting order of indices if determinant < 0
+			IF(det < 0)
+				LOCAL_VAR(TINT, tmp, tA)
+				ASSIGN(tA, tC)
+				ASSIGN(tC, tmp)
+			END_IF
+			// writing indices of texture vertices of face
+			LOCAL_VAR(TSTRING, str, T("\t\t\t*MESH_TFACE ") + INT_TO_STRING(i))
+			ASSIGN(str, str + T("\t") + INT_TO_STRING(tA))
+			ASSIGN(str, str + T("\t") + INT_TO_STRING(tB))
+			ASSIGN(str, str + T("\t") + INT_TO_STRING(tC))
+			CALLP1(SELF __WriteLine, str)
+		END_FOR
+		CALLP1(SELF __WriteLine, T("\t\t}"))
+	END_IF
+	
+	// end mesh writing
+	CALLP1(SELF __WriteLine, T("\t}"))
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__WriteTMAnimation, TINT, objIndex)
+	IF((SELF __modelType != MODELTYPE_DYNAMIC) OR NOT(SELF __exportAnimation) OR NOT(GET_ELEM(SELF __objSelectFlags, objIndex)))
+		RETURN
+	END_IF
+    ASSIGN(SELF __curObjShortName, GET_ELEM(SELF __objShortNames, objIndex))
+    
+	CALLP1(SELF __WriteLine, T("\t*TM_ANIMATION {"))
+	CALLP1(SELF __WriteLine, T("\t\t*NODE_NAME \"") + SELF __curObjShortName + T("\""))
+	CALLP1(SELF __WriteLine, T("\t\t*CONTROL_POS_TRACK {"))
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Writing '%1'"), SELF __curObjShortName))
+
+	LOCAL_VAR(TINT, start, CALLF0(SELF __timeTransform.GetStartFrameInScene))
+	LOCAL_VAR(TINT, end, CALLF0(SELF __timeTransform.GetEndFrameInScene))
+	FOR(frameInScene, start, end + 1)
+		SHOW_PROGRESS_BAR(caption, 60 + 20 * (frameInScene - start) / (end - start + 1))
+		LOCAL_VAR(TINT, frameInFile, CALLF1(SELF __TransformTime, frameInScene))
+		LOCAL_VAR(TSTRING, str, T("\t\t\t*CONTROL_POS_SAMPLE ") + INT_TO_STRING(frameInFile * GET_TICKS_PER_FRAME))
+		LOCAL_VAR(TPOINT3, pos, CALLF1(GET_ELEM(SELF __posTracks, objIndex).GetSamplePos, frameInScene - start))
+		ASSIGN(pos, pos * SELF __scaleCoef)
+		ASSIGN(str, str + T("\t") + CALLF1(SELF __Point3ToString, pos))
+		CALLP1(SELF __WriteLine, str)
+	END_FOR
+	CALLP1(SELF __WriteLine, T("\t\t}"))
+	CALLP1(SELF __WriteLine, T("\t\t*CONTROL_ROT_TRACK {"))
+	FOR(frameInScene, start, end + 1)
+		SHOW_PROGRESS_BAR(caption, 80 + 20 * (frameInScene - start) / (end - start + 1))
+		LOCAL_VAR(TINT, frameInFile, CALLF1(SELF __TransformTime, frameInScene))
+		LOCAL_VAR(TSTRING, str, T("\t\t\t*CONTROL_ROT_SAMPLE ") + INT_TO_STRING(frameInFile * GET_TICKS_PER_FRAME))
+		LOCAL_VAR(TPOINT3, axis, CALLF1(GET_ELEM(SELF __rotTracks, objIndex).GetSampleAxis, frameInScene - start))
+		LOCAL_VAR(TFLOAT, angle, CALLF1(GET_ELEM(SELF __rotTracks, objIndex).GetSampleAngle, frameInScene - start))
+		ASSIGN(str, str + T("\t") + CALLF1(SELF __Point3ToString, axis))
+		ASSIGN(str, str + T("\t") + FLOAT_TO_STRING(angle))
+		CALLP1(SELF __WriteLine, str)
+	END_FOR
+	CALLP1(SELF __WriteLine, T("\t\t}"))
+	CALLP1(SELF __WriteLine, T("\t\t*CONTROL_SCALE_TRACK {"))
+	CALLP1(SELF __WriteLine, T("\t\t\t*CONTROL_SCALE_SAMPLE 0 1 1 1 0 0 0 0"))
+	CALLP1(SELF __WriteLine, T("\t\t}"))
+	CALLP1(SELF __WriteLine, T("\t}"))
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__WriteGeomObject, TINT, objIndex)
+    ASSIGN(SELF __curObjShortName, GET_ELEM(SELF __objShortNames, objIndex))
+	ASSIGN(SELF __curObjName, SELF __modelPrefix + SELF __curObjShortName)
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Writing '%1'"), SELF __curObjShortName))
+	SHOW_PROGRESS_BAR(caption, 1)
+	ASSIGN(SELF __curObj, FIND_OBJECT_BY_NAME(SELF __curObjName))
+	IF(SELF __curObj == INVALID_OBJECT)
+		RETURN
+	END_IF
+	
+	LOCAL_VAR(TINT, objType, GET_ELEM(SELF __objTypes, objIndex))
+	IF(objType == OBJTYPE_MESH)
+		CALLP1(SELF __WriteLine, T("*GEOMOBJECT {"))
+	ELSE
+		CALLP1(SELF __WriteLine, T("*HELPEROBJECT {"))
+	END_IF
+	
+	CALLP1(SELF __WriteLine, T("\t*NODE_NAME \"") + SELF __curObjShortName + T("\""))
+	
+    LOCAL_VAR(TSTRING, parentName, GET_ELEM(SELF __parentShortNames, objIndex))
+	IF(parentName != EMPTY_STRING)
+		CALLP1(SELF __WriteLine, T("\t*NODE_PARENT \"") + parentName + T("\""))
+	END_IF
+	
+	LOCAL_VAR(TMATRIX3, tm, GET_TRANSFORM(SELF __curObj))
+	IF(SELF __modelType == MODELTYPE_MORPH)
+		ASSIGN(tm, IDENTITY_MATRIX3)
+	END_IF
+	CALLP1(SELF __WriteNodeTM, tm)
+	
+	IF((objType == OBJTYPE_MESH) AND (IS_MESH_OBJECT(SELF __curObj)))
+		CALLP1(SELF __WriteMaterialRef, 0)
+		IF((SELF __modelType == MODELTYPE_MORPH) AND (SELF __exportAnimation))
+			CALLP1(SELF __WriteLine, T("\t*MESH_ANIMATION {"))
+			LOCAL_VAR(TINT, oldCurFrame, GET_CURRENT_FRAME)
+			
+			LOCAL_VAR(TINT, start, CALLF0(SELF __timeTransform.GetStartFrameInScene))
+			LOCAL_VAR(TINT, end, CALLF0(SELF __timeTransform.GetEndFrameInScene))
+			FOR(frameInScene, start, end + 1)
+				SET_CURRENT_FRAME(frameInScene)
+				CALLP0(SELF __WriteMesh)
+			END_FOR
+			SET_CURRENT_FRAME(oldCurFrame)
+			CALLP1(SELF __WriteLine, T("\t}"))
+		ELSE
+			CALLP0(SELF __WriteMesh)
+		END_IF
+	END_IF
+	
+	CALLP1(SELF __WriteTMAnimation, objIndex)
+	CALLP1(SELF __WriteLine, T("}"))
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__WriteGeomObjects)
+    FOR(i, 0, SIZE(SELF __objShortNames))
+		LOCAL_VAR(TINT, objType, GET_ELEM(SELF __objTypes, i))
+        IF(GET_ELEM(SELF __objSelectFlags, i) OR (SELF __exportAnimation AND (objType == OBJTYPE_BONE OR objType == OBJTYPE_SLOT)))
+            CALLP1(SELF __WriteGeomObject, i)
+        END_IF
+    END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__WriteSkinWeights)
+	// show progress
+	LOCAL_VAR(TSTRING, caption, T("Writing skin weights"))
+	SHOW_PROGRESS_BAR(caption, 99)
+
+	// for each skin...
+	FOR(skinnedObjIndex, 0, SIZE(SELF __skinnedObjs))
+		// getting information about skin
+		ASSIGN(SELF __curObj, GET_ELEM(SELF __skinnedObjs, skinnedObjIndex))
+		ASSIGN(SELF __curObjName, GET_OBJECT_NAME(SELF __curObj))
+		LOCAL_VAR(TNameAnalyzer, na, CALLF1(AnalyzeName, SELF __curObjName))
+		ASSIGN(SELF __curObjShortName, CALLF0(na.GetShortName))
+		LOCAL_VAR(TSKIN, sd, GET_SKIN(SELF __curObj))
+		LOCAL_VAR(TINT, numVerts, GET_NUM_SKIN_VERTS(sd))
+		
+		// writing skin
+		CALLP1(SELF __WriteLine, T("*MESH_SOFTSKINVERTS {"))
+		CALLP1(SELF __WriteLine, SELF __curObjShortName)
+		CALLP1(SELF __WriteLine, INT_TO_STRING(numVerts))
+		FOR(i, 0, numVerts)
+			LOCAL_VAR(TINT, numWeights, GET_VERTEX_NUM_WEIGHTS(sd, i))
+			LOCAL_VAR(TSTRING, str, INT_TO_STRING(numWeights))
+			FOR(j, 0, numWeights)
+				LOCAL_VAR(TFLOAT, weight, GET_VERTEX_WEIGHT(sd, i, j))
+				LOCAL_VAR(TOBJECT, bone, GET_VERTEX_WEIGHT_BONE(sd, i, j))
+				LOCAL_VAR(TSTRING, boneName, GET_OBJECT_NAME(bone))
+				CALLP1(na.Analyze, boneName)
+				LOCAL_VAR(TSTRING, boneShortName, CALLF0(na.GetShortName))
+				ASSIGN(str, str + T("\t\"") + boneShortName + T("\"\t") + FLOAT_TO_STRING(weight))
+			END_FOR
+			CALLP1(SELF __WriteLine, str)
+		END_FOR
+		CALLP1(SELF __WriteLine, T("}"))
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__RetrieveTMAnimationFromScene)
+	IF((SELF __modelType != MODELTYPE_DYNAMIC) OR NOT(SELF __exportAnimation))
+		RETURN
+	END_IF
+
+	LOCAL_VAR(TINT, numSamples, CALLF0(SELF __timeTransform.GetEndFrameInFile) - CALLF0(SELF __timeTransform.GetStartFrameInFile) + 1)
+	FOR(i, 0, SIZE(SELF __objShortNames))
+   		LOCAL_VAR(TPosTrack, posTrack, CALLF0(NewPosTrack))
+   		LOCAL_VAR(TRotTrack, rotTrack, CALLF0(NewRotTrack))
+        IF(GET_ELEM(SELF __objSelectFlags, i))
+    		CALLP1(posTrack.SetNumSamples, numSamples)
+    		CALLP1(rotTrack.SetNumSamples, numSamples)
+        END_IF
+  		APPEND(SELF __posTracks, posTrack)
+   		APPEND(SELF __rotTracks, rotTrack)
+	END_FOR
+	
+	LOCAL_VAR(TINT, oldCurFrame, GET_CURRENT_FRAME)
+	LOCAL_VAR(TINT, start, CALLF0(SELF __timeTransform.GetStartFrameInScene))
+	LOCAL_VAR(TINT, end, CALLF0(SELF __timeTransform.GetEndFrameInScene))
+	FOR(frameInScene, start, end + 1)
+		SET_CURRENT_FRAME(frameInScene)
+		LOCAL_VAR(TINT, frameOffset, frameInScene - start)
+		FOR(i, 0, SIZE(SELF __objShortNames))
+            IF(GET_ELEM(SELF __objSelectFlags, i))
+        		ASSIGN(SELF __curObjShortName, GET_ELEM(SELF __objShortNames, i))
+    			ASSIGN(SELF __curObjName, SELF __modelPrefix + SELF __curObjShortName)
+    			ASSIGN(SELF __curObj, FIND_OBJECT_BY_NAME(SELF __curObjName))
+    			IF(SELF __curObj != INVALID_OBJECT)
+    				LOCAL_VAR(TMATRIX3, tm, GET_TRANSFORM(SELF __curObj))
+    				LOCAL_VAR(TPOINT3, pos, GET_TRANSLATION_PART(tm))
+    				LOCAL_VAR(TQUAT, q, GET_ROTATION_PART(tm))
+    				LOCAL_VAR(TPOINT3, axis, GET_AXIS(q))
+    				LOCAL_VAR(TFLOAT, angle, GET_ANGLE(q))
+    				CALLP2(GET_ELEM(SELF __posTracks, i).SetSamplePos, frameOffset, pos)
+    				CALLP2(GET_ELEM(SELF __rotTracks, i).SetSampleAxis, frameOffset, axis)
+    				CALLP2(GET_ELEM(SELF __rotTracks, i).SetSampleAngle, frameOffset, angle)
+    			END_IF
+            END_IF
+		END_FOR
+	END_FOR
+	SET_CURRENT_FRAME(oldCurFrame)
+END_MEMBER_PROC
+
+// Public section:
+// Initialize a new object
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __file,               CALLF0(NewFile))
+    ASSIGN(SELF __modelHierarchy,     CALLF0(NewModelHierarchy))
+	ASSIGN(SELF __modelPrefix,        EMPTY_STRING)
+	ASSIGN(SELF __modelType,          MODELTYPE_UNKNOWN)
+    ASSIGN(SELF __objShortNames,      EMPTY_ARRAY(TSTRING))
+    ASSIGN(SELF __parentShortNames,   EMPTY_ARRAY(TSTRING))
+    ASSIGN(SELF __objTypes,           EMPTY_ARRAY(TINT))
+    ASSIGN(SELF __objSelectFlags,     EMPTY_ARRAY(TBOOL))
+	ASSIGN(SELF __exportAnimation,    FALSE)
+	ASSIGN(SELF __scaleCoef,          1)
+	ASSIGN(SELF __timeTransform,      CALLF0(NewTimeTransform))
+	ASSIGN(SELF __expMtls,            EMPTY_ARRAY(TMATERIAL))
+	ASSIGN(SELF __addMtls,            EMPTY_ARRAY(TMaterialDesc))
+	ASSIGN(SELF __curObj,             INVALID_OBJECT)
+	ASSIGN(SELF __curObjName,         EMPTY_STRING)
+	ASSIGN(SELF __curObjShortName,    EMPTY_STRING)
+	ASSIGN(SELF __skinnedObjs,        EMPTY_ARRAY(TOBJECT))
+	ASSIGN(SELF __posTracks,          EMPTY_ARRAY(TPosTrack))
+	ASSIGN(SELF __rotTracks,          EMPTY_ARRAY(TRotTrack))	
+END_MEMBER_PROC
+
+// Write asc file; throws exception if failed
+MEMBER_PROC_6(WriteASCFile, TSTRING, filename, REF(TModelHierarchy), modelHierarchy, TARRAY(TSTRING), selObjShortNames, TBOOL, exportAnimation, TTimeTransform, timeTransform, TSpaceTransform, spaceTransform)
+	CALLP0(SELF Init)
+    ASSIGN(SELF __modelHierarchy,   modelHierarchy)
+	ASSIGN(SELF __modelPrefix,      CALLF0(modelHierarchy.GetModelPrefix))
+	ASSIGN(SELF __modelType,        CALLF0(modelHierarchy.GetModelType))
+    ASSIGN(SELF __objShortNames,    CALLF0(modelHierarchy.GetObjects))
+    ASSIGN(SELF __parentShortNames, CALLF0(modelHierarchy.GetObjectParents))
+    ASSIGN(SELF __objTypes,         CALLF0(modelHierarchy.GetObjectTypes))
+    
+    ASSIGN(SELF __objSelectFlags, EMPTY_ARRAY(TBOOL))
+    FOR(i, 0, SIZE(SELF __objShortNames))
+        LOCAL_VAR(TBOOL, selFlag, FALSE)
+        FOR(j, 0, SIZE(selObjShortNames))
+            IF(GET_ELEM(SELF __objShortNames, i) == GET_ELEM(selObjShortNames, j))
+                ASSIGN(selFlag, TRUE)
+                BREAK
+            END_IF
+        END_FOR
+        APPEND(SELF __objSelectFlags, selFlag)
+    END_FOR
+    
+	ASSIGN(SELF __exportAnimation,    exportAnimation)
+	ASSIGN(SELF __scaleCoef,          CALLF0(spaceTransform.GetFileUnitsPerSystemUnit))
+	ASSIGN(SELF __timeTransform,      timeTransform)
+	TRY
+		CALLP2(SELF __file.Open, filename, T("wt"))
+		CALLP0(SELF __WriteASCVersion)
+		CALLP0(SELF __WriteComment)
+		CALLP0(SELF __WriteSceneInfo)
+		CALLP0(SELF __WriteMaterialList)
+		CALLP0(SELF __RetrieveTMAnimationFromScene)
+        CALLP0(SELF __WriteGeomObjects)
+		CALLP0(SELF __WriteSkinWeights)
+		CALLP0(SELF __file.Close)
+	END_TRY
+	CATCH
+		CALLP0(SELF __file.Close)
+		DELETE_FILE(filename)
+		THROW_AGAIN
+	END_CATCH
+END_MEMBER_PROC
+
+END_CLASS // TASCFileLoader
+
+
+// Create an object of the "TASCFileSaver" class
+GLOBAL_FUNC_0(TASCFileSaver, NewASCFileSaver)
+	LOCAL_VAR(TASCFileSaver, saver, NEW_VAL(TASCFileSaver))
+	CALLP0(saver.Init)
+	RETURN_VAL(saver)
+END_GLOBAL_FUNC
+
+#endif // ASC_FILE_SAVER_META

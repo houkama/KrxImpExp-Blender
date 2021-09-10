@@ -1,0 +1,265 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        MatRenParams.meta
+// Purpose:     Definition of TMatRenParams class.
+// Author:      Vitaly Baranov
+// Created:     May 31, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef MAT_REN_PARAMS_META
+#define MAT_REN_PARAMS_META
+
+#include "Meta.h"
+#include "File.meta"
+
+// Space transformation
+CLASS(TMatRenParams)
+
+// Private section:
+MEMBER_VAR(TARRAY(TSTRING), __names)
+MEMBER_VAR(TARRAY(TSTRING), __textures)
+MEMBER_VAR(TBOOL,           __autoNames)
+
+MEMBER_FUNC_2(TSTRING, __ExtendString, TSTRING, str, TINT, newLength)
+	LOCAL_VAR(TSTRING, str2, str)
+	WHILE(STRLEN(str2) < newLength)
+		STRCAT(str2, T(" "))
+	END_WHILE
+	RETURN_VAL(str2)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(__ParsePmlFile, TSTRING, pmlFilePath)
+	LOCAL_VAR(TFile, f, CALLF0(NewFile))
+	TRY
+		CALLP2(f.Open, pmlFilePath, T("rt"))
+		LOCAL_VAR(TSTRING, name, EMPTY_STRING)
+		LOCAL_VAR(TSTRING, texture, EMPTY_STRING)
+		WHILE(NOT(CALLF0(f.Eof)))
+			LOCAL_VAR(TSTRING, str, CALLF0(f.ReadLine))
+			IF(STRFIND(str, T("[% zCMaterial")) != NOT_FOUND)
+				ASSIGN(name, EMPTY_STRING)
+				ASSIGN(texture, EMPTY_STRING)
+			ELSE_IF(STRFIND(str, T("name=string:")) != NOT_FOUND)
+				LOCAL_VAR(TINT, pos, STRFIND(str, T(":")))
+				ASSIGN(name, SUBSTR(str, pos + 1, STRLEN(str)))
+			ELSE_IF(STRFIND(str, T("texture=string:")) != NOT_FOUND)
+				LOCAL_VAR(TINT, pos, STRFIND(str, T(":")))
+				ASSIGN(texture, SUBSTR(str, pos + 1, STRLEN(str)))
+			ELSE_IF(STRFIND(str, T("[]")) != NOT_FOUND)
+				IF((name != EMPTY_STRING) AND (texture != EMPTY_STRING))
+					LOCAL_VAR(TBOOL, alreadyInList, FALSE)
+					FOR(i, 0, SIZE(SELF __names))
+						IF((GET_ELEM(SELF __names, i) == name) AND (GET_ELEM(SELF __textures, i) == texture))
+							ASSIGN(alreadyInList, TRUE)
+							BREAK
+						END_IF
+					END_FOR
+					IF(NOT(alreadyInList))
+						APPEND(SELF __names, name)
+						APPEND(SELF __textures, texture)
+					END_IF
+				END_IF
+			END_IF
+		END_WHILE
+	END_TRY
+	CATCH
+	END_CATCH
+	CALLP0(f.Close)
+END_MEMBER_PROC
+
+MEMBER_FUNC_2(TINT, __CompareMaterials, TINT, i, TINT, j)
+	LOCAL_VAR(TINT, cmp, STRICMP(GET_ELEM(SELF __names, i), GET_ELEM(SELF __names, j)))
+	IF(cmp == 0)
+		ASSIGN(cmp, STRICMP(GET_ELEM(SELF __textures, i), GET_ELEM(SELF __textures, j)))
+	END_IF
+	RETURN_VAL(cmp)
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(__SwapMaterials, TINT, i, TINT, j)
+	LOCAL_VAR(TSTRING, tmp, GET_ELEM(SELF __names, i))
+	SET_ELEM(SELF __names, i, GET_ELEM(SELF __names, j))
+	SET_ELEM(SELF __names, j, tmp)
+	ASSIGN(tmp, GET_ELEM(SELF __textures, i))
+	SET_ELEM(SELF __textures, i, GET_ELEM(SELF __textures, j))
+	SET_ELEM(SELF __textures, j, tmp)
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__SortMaterials)
+	FOR(i, 0, SIZE(SELF __names))
+		LOCAL_VAR(TINT, m, i)
+		FOR(j, i + 1, SIZE(SELF __names))
+			IF(CALLF2(SELF __CompareMaterials, m, j) > 0)
+				ASSIGN(m, j)
+			END_IF
+		END_FOR
+		IF(m != i)
+			CALLP2(SELF __SwapMaterials, m, i)
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Public section:
+// Initialize
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __names, EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __textures,  EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __autoNames,  FALSE)
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(SaveTextFile, TSTRING, filename)
+	LOCAL_VAR(TFile, f, CALLF0(NewFile))
+	TRY
+		CALLP2(f.Open, filename, T("wt"))
+		LOCAL_VAR(TSTRING, str, CALLF2(SELF __ExtendString, T("Material  "), 41) + T(" | Texture"))
+		CALLP1(f.WriteLine, str)
+		FOR(i, 0, SIZE(SELF __textures))
+			ASSIGN(str, CALLF2(SELF __ExtendString, T("\"") + GET_ELEM(SELF __names, i) + T("\""), 41))
+			ASSIGN(str, str + T(" | \"") + GET_ELEM(SELF __textures, i) + T("\""))
+			CALLP1(f.WriteLine, str)
+		END_FOR
+		CALLP1(f.WriteLine, T(""))
+		CALLP1(f.WriteLine, T("AutoNames = ") + BOOL_TO_STRING(SELF __autoNames))
+	END_TRY
+	CATCH
+	END_CATCH
+	CALLP0(f.Close)
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(LoadTextFile, TSTRING, filename)
+	CALLP0(SELF Init)
+	LOCAL_VAR(TFile, f, CALLF0(NewFile))
+	TRY
+		CALLP2(f.Open, filename, T("rt"))
+		WHILE(NOT(CALLF0(f.Eof)))
+			LOCAL_VAR(TSTRING, str, CALLF0(f.ReadLine))
+			LOCAL_VAR(TSTRING, strU, UPPER_CASE(str))
+			IF(STRFIND(strU, T("AUTONAMES")) != NOT_FOUND)
+				LOCAL_VAR(TINT, pos, STRFIND(str, T("=")))
+				IF(pos != NOT_FOUND)
+					LOCAL_VAR(TSTRING, strBoolVal, SUBSTR(str, pos + 1, STRLEN(str)))
+					WHILE(SUBSTR(strBoolVal, 0, 1) == T(" "))
+						ASSIGN(strBoolVal, SUBSTR(strBoolVal, 1, STRLEN(strBoolVal)))
+					END_WHILE
+					WHILE(SUBSTR(strBoolVal, STRLEN(strBoolVal) - 1, STRLEN(strBoolVal)) == T(" "))
+						ASSIGN(strBoolVal, SUBSTR(strBoolVal, 0, STRLEN(strBoolVal) - 1))
+					END_WHILE
+					ASSIGN(SELF __autoNames, STRING_TO_BOOL(strBoolVal))
+				END_IF
+			ELSE_IF(STRFIND(str, T("|")) != NOT_FOUND)
+				LOCAL_VAR(TINT, pos1, STRFIND(str, T("\"")))
+				IF(pos1 != NOT_FOUND)
+					LOCAL_VAR(TINT, pos2, STRFIND(SUBSTR(str, pos1 + 1, STRLEN(str)), T("\"")) + pos1 + 1)
+					IF(pos2 != NOT_FOUND)
+						LOCAL_VAR(TINT, pos3, STRFIND(SUBSTR(str, pos2 + 1, STRLEN(str)), T("\"")) + pos2 + 1)
+						IF(pos3 != NOT_FOUND)
+							LOCAL_VAR(TINT, pos4, STRFIND(SUBSTR(str, pos3 + 1, STRLEN(str)), T("\"")) + pos3 + 1)
+							IF(pos4 != NOT_FOUND)
+								LOCAL_VAR(TSTRING, name, SUBSTR(str, pos1 + 1, pos2))
+								LOCAL_VAR(TSTRING, texture, SUBSTR(str, pos3 + 1, pos4))
+								APPEND(SELF __names, name)
+								APPEND(SELF __textures, texture)
+							END_IF
+						END_IF
+					END_IF
+				END_IF
+			END_IF
+		END_WHILE
+	END_TRY
+	CATCH
+	END_CATCH
+	CALLP0(f.Close)
+END_MEMBER_PROC
+
+// Parse pml files
+MEMBER_PROC_1(LoadMaterialFilter, TSTRING, matLibIniPath)
+	// getting path to "_work\\data\tools" directory
+	LOCAL_VAR(TSTRING, toolsDataDir, matLibIniPath)
+	LOCAL_VAR(TINT, pos, STRLEN(toolsDataDir) - 1)
+	WHILE(pos >= 0)
+		LOCAL_VAR(TSTRING, ch, SUBSTR(toolsDataDir, pos, pos + 1))
+		IF((ch == T("\\")) OR (ch == T("/")))
+			ASSIGN(toolsDataDir, SUBSTR(toolsDataDir, 0, pos + 1))
+			BREAK
+		END_IF
+		ASSIGN(pos, pos - 1)
+	END_WHILE
+	
+	// loading the "matlib.ini" file
+	LOCAL_VAR(TFile, fMatLibIni, CALLF0(NewFile))
+	TRY
+		CALLP2(fMatLibIni.Open, matLibIniPath, T("rt"))
+		ASSIGN(SELF __names, EMPTY_ARRAY(TSTRING))
+		ASSIGN(SELF __textures,  EMPTY_ARRAY(TSTRING))
+		WHILE(NOT(CALLF0(fMatLibIni.Eof)))
+			LOCAL_VAR(TSTRING, str, CALLF0(fMatLibIni.ReadLine))
+			LOCAL_VAR(TINT, pos, STRFIND(str, T("=")))
+			IF(pos != NOT_FOUND)
+				LOCAL_VAR(TSTRING, pmlFilePath, toolsDataDir + SUBSTR(str, 0, pos) + T(".pml"))
+				CALLP1(SELF __ParsePmlFile, pmlFilePath)
+			END_IF
+		END_WHILE
+		CALLP0(SELF __SortMaterials)
+	END_TRY
+	CATCH
+	END_CATCH
+	CALLP0(fMatLibIni.Close)
+END_MEMBER_PROC
+
+// Number of materials
+MEMBER_FUNC_0(TINT, GetNumMaterials)
+	RETURN_VAL(SIZE(SELF __names))
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetNumMaterials, TINT, numMaterials)
+	IF(SIZE(SELF __names) != numMaterials)
+		ASSIGN(SELF __names, EMPTY_ARRAY(TSTRING))
+		ASSIGN(SELF __textures,  EMPTY_ARRAY(TSTRING))
+		RESERVE(SELF __names, numMaterials)
+		RESERVE(SELF __textures, numMaterials)
+		FOR(i, 0, numMaterials)
+			APPEND(SELF __names, EMPTY_STRING)
+			APPEND(SELF __textures, EMPTY_STRING)
+		END_FOR
+	END_IF
+END_MEMBER_PROC
+
+// Material's name
+MEMBER_FUNC_1(TSTRING, GetName, TINT, index)
+	RETURN_VAL(GET_ELEM(SELF __names, index))
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(SetName, TINT, index, TSTRING, name)
+	SET_ELEM(SELF __names, index, name)
+END_MEMBER_PROC
+
+// Texture map's file name
+MEMBER_FUNC_1(TSTRING, GetTexture, TINT, index)
+	RETURN_VAL(GET_ELEM(SELF __textures, index))
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(SetTexture, TINT, index, TSTRING, name)
+	SET_ELEM(SELF __textures, index, name)
+END_MEMBER_PROC
+
+// Name of unknown materials by diffuse map's file name?
+MEMBER_FUNC_0(TBOOL, GetAutoNames)
+	RETURN_VAL(SELF __autoNames)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetAutoNames, TBOOL, autoNames)
+	ASSIGN(SELF __autoNames, autoNames)
+END_MEMBER_PROC
+
+END_CLASS // TMatRenParams
+
+// Global function to create an instance of class TMatRenParams
+GLOBAL_FUNC_0(TMatRenParams, NewMatRenParams)
+	LOCAL_VAR(TMatRenParams, mr, NEW_VAL(TMatRenParams))
+	CALLP0(mr.Init)
+	RETURN_VAL(mr)
+END_GLOBAL_FUNC
+
+#endif // MAT_REN_PARAMS_META

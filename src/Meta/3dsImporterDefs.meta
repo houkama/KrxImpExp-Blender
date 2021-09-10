@@ -1,0 +1,22 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        3dsImporterDefs.meta
+// Purpose:     Named constants for using in the "3dsImporterDlgInput.meta" 
+//              and "3dsImporterDlgOutput.meta" files
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef _3DS_IMPORTER_DEFS_META
+#define _3DS_IMPORTER_DEFS_META
+
+#include "Meta.h"
+
+// Possible values for 3ds file importer's mode
+#define CURSCN_REPLACE_SCENE	1
+#define CURSCN_MERGE_SCENE		2
+#define CURSCN_REPLACE_SLOT		3
+#define CURSCN_REPLACE_BONE		4
+
+#endif // _3DS_IMPORTER_DEFS_META

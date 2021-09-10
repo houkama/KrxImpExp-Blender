@@ -1,0 +1,55 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        PosTrack.meta
+// Purpose:     Definition of TPosTrack class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef POS_TRACK_META
+#define POS_TRACK_META
+
+#include "Meta.h"
+
+CLASS(TPosTrack)
+
+// Private section:
+MEMBER_VAR(TARRAY(TPOINT3), __samplePositions)
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __samplePositions,  EMPTY_ARRAY(TPOINT3))
+END_MEMBER_PROC
+
+MEMBER_PROC_1(SetNumSamples, TINT, numSamples)
+	IF(SIZE(SELF __samplePositions) != numSamples)
+		ASSIGN(SELF __samplePositions, EMPTY_ARRAY(TPOINT3))
+		FOR(i, 0, numSamples)
+			APPEND(SELF __samplePositions, ZERO_POINT3)
+		END_FOR
+	END_IF
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetNumSamples)
+	RETURN_VAL(SIZE(SELF __samplePositions))
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(SetSamplePos, TINT, sampleIdx, TPOINT3, pos)
+	SET_ELEM(SELF __samplePositions, sampleIdx, pos)
+END_MEMBER_FUNC
+
+MEMBER_FUNC_1(TPOINT3, GetSamplePos, TINT, sampleIdx)
+	RETURN_VAL(GET_ELEM(SELF __samplePositions, sampleIdx))
+END_MEMBER_FUNC
+
+END_CLASS // TPosTrack
+
+// Global function to create an instance of class TPosTrack
+GLOBAL_FUNC_0(TPosTrack, NewPosTrack)
+	LOCAL_VAR(TPosTrack, tr, NEW_VAL(TPosTrack))
+	CALLP0(tr.Init)
+	RETURN_VAL(tr)
+END_GLOBAL_FUNC
+
+#endif // POS_TRACK_META

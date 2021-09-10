@@ -1,0 +1,555 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        3dsFileLoader.meta
+// Purpose:     Definition of T3DSFileLoader class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef _3DS_FILE_LOADER_META
+#define _3DS_FILE_LOADER_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "FormatMsg.meta"
+#include "ObjectStats.meta"
+#include "SpaceTransform.meta"
+#include "3dsReadChunk.meta"
+#include "ObjArrayUtils.meta"
+
+// Error messages
+#define ErrFileIsNot3DS			_T("File is not a 3d studio mesh.\nFile name: \"%1\".")
+#define ErrMtlNotFound			_T("Material not found.\nMaterial name: \"%1\".\nFile name: \"%2\".")
+#define ErrFaceIdxOutOfRange	_T("Face index is out of range while reading faces material list.\nFace index: %1 (Allowable range: %2..%3).\nFile name: \"%4\".")
+#define ErrVertIdxOutOfRange	_T("Vertex index is out of range while reading faces description.\nVertex index: %1 (Allowable range: %2..%3).\nFile name: \"%4\".")
+
+// Class for loading a 3ds file
+CLASS(T3DSFileLoader)
+
+// Private section:
+MEMBER_VAR(TFile,             __file)
+MEMBER_VAR(TFLOAT,            __scaleCoef)
+MEMBER_VAR(TINT,              __3DSVersion)
+MEMBER_VAR(TINT,              __meshVersion)
+MEMBER_VAR(TFLOAT,            __oneUnit)
+MEMBER_VAR(TARRAY(TMATERIAL), __impMtls)
+MEMBER_VAR(TARRAY(TSTRING),   __impMtlNames)
+MEMBER_VAR(TARRAY(TOBJECT),   __impObjects)
+MEMBER_VAR(TARRAY(TObjectStats), __impObjectStats)
+MEMBER_VAR(TOBJECT,           __curObj)
+MEMBER_VAR(TBOOL,             __curObjHidden)
+MEMBER_VAR(TSTRING,           __curObjNameInFile)
+MEMBER_VAR(TSTRING,           __curObjNameInScene)
+MEMBER_VAR(TMESH,             __curObjMesh)
+
+// Read 3DS-Version chunk
+MEMBER_PROC_1(__Read3DSVersion, T3DSReadChunk, parentChunk)
+	ASSIGN(SELF __3DSVersion, CALLF0(SELF __file.ReadUnsignedLong))
+END_MEMBER_PROC
+
+// Read Mesh version chunk
+MEMBER_PROC_1(__ReadMeshVersion, T3DSReadChunk, parentChunk)
+	ASSIGN(SELF __meshVersion, CALLF0(SELF __file.ReadUnsignedLong))
+END_MEMBER_PROC
+
+// Read color
+MEMBER_FUNC_1(TCOLOR, __ReadColor, T3DSReadChunk, parentChunk)
+	LOCAL_VAR(TFLOAT, r, 0)
+	LOCAL_VAR(TFLOAT, g, 0)
+	LOCAL_VAR(TFLOAT, b, 0)
+	LOCAL_VAR(T3DSReadChunk, chunk, CALLF0(New3DSReadChunk))
+	LOCAL_VAR(TINT, sizeOfChunks, parentChunk.GetSubChunksSize())
+	WHILE(sizeOfChunks > 0)
+		CALLP1(chunk.ReadHeader, SELF __file)
+		ASSIGN(sizeOfChunks, sizeOfChunks - chunk.GetSize())
+		IF((chunk.GetID() == 0x0010) OR (chunk.GetID() == 0x0011))
+			IF(chunk.GetID() == 0x0010)
+				ASSIGN(r, CALLF0(SELF __file.ReadFloat))
+				ASSIGN(g, CALLF0(SELF __file.ReadFloat))
+				ASSIGN(b, CALLF0(SELF __file.ReadFloat))
+			ELSE
+				ASSIGN(r, INT_TO_FLOAT(CALLF0(SELF __file.ReadUnsignedChar)) / 255)
+				ASSIGN(g, INT_TO_FLOAT(CALLF0(SELF __file.ReadUnsignedChar)) / 255)
+				ASSIGN(b, INT_TO_FLOAT(CALLF0(SELF __file.ReadUnsignedChar)) / 255)
+			END_IF
+			IF(r < 0)
+				ASSIGN(r, 0)
+			ELSE_IF(r > 1)
+				ASSIGN(r, 1)
+			END_IF
+			IF(g < 0)
+				ASSIGN(g, 0)
+			ELSE_IF(g > 1)
+				ASSIGN(g, 1)
+			END_IF
+			IF(b < 0)
+				ASSIGN(b, 0)
+			ELSE_IF(b > 1)
+				ASSIGN(b, 1)
+			END_IF
+		END_IF
+		CALLP1(chunk.SkipRest, SELF __file)
+	END_WHILE	
+	LOCAL_VAR(TCOLOR, clr, NEW_COLOR(r, g, b))
+	RETURN_VAL(clr)
+END_MEMBER_FUNC
+
+// Read percent
+MEMBER_FUNC_1(TINT, __ReadPercent, T3DSReadChunk, parentChunk)
+	LOCAL_VAR(TINT, p, 0)
+	LOCAL_VAR(T3DSReadChunk, chunk, CALLF0(New3DSReadChunk))
+	LOCAL_VAR(TINT, sizeOfChunks, parentChunk.GetSubChunksSize())
+	WHILE(sizeOfChunks > 0)
+		CALLP1(chunk.ReadHeader, SELF __file)
+		ASSIGN(sizeOfChunks, sizeOfChunks - chunk.GetSize())
+		IF((chunk.GetID() == 0x0030) OR (chunk.GetID() == 0x0031))
+			IF(chunk.GetID() == 0x0030)
+				ASSIGN(p, CALLF0(SELF __file.ReadUnsignedShort))
+			ELSE
+				ASSIGN(p, FLOAT_TO_INT(CALLF0(SELF __file.ReadFloat)))
+			END_IF
+			IF(p < 0)
+				ASSIGN(p, 0)
+			ELSE_IF(p > 100)
+				ASSIGN(p, 100)
+			END_IF
+		END_IF
+		CALLP1(chunk.SkipRest, SELF __file)
+	END_WHILE	
+	RETURN_VAL(p)
+END_MEMBER_FUNC
+
+// Read material map
+MEMBER_FUNC_1(TSTRING, __ReadMap, T3DSReadChunk, parentChunk)
+	LOCAL_VAR(TSTRING, mapname, EMPTY_STRING)
+	LOCAL_VAR(TBOOL, mapnameRead, FALSE)
+	LOCAL_VAR(T3DSReadChunk, chunk, CALLF0(New3DSReadChunk))
+	LOCAL_VAR(TINT, sizeOfChunks, parentChunk.GetSubChunksSize())
+	WHILE(sizeOfChunks > 0 AND NOT(mapnameRead))
+		CALLP1(chunk.ReadHeader, SELF __file)
+		ASSIGN(sizeOfChunks, sizeOfChunks - chunk.GetSize())
+		IF(chunk.GetID() == 0xA300)
+			ASSIGN(mapname, CALLF0(SELF __file.ReadString))
+			ASSIGN(mapnameRead, TRUE)
+		END_IF
+		CALLP1(chunk.SkipRest, SELF __file)
+	END_WHILE	
+	RETURN_VAL(mapname)
+END_MEMBER_FUNC
+
+// Read material block
+MEMBER_PROC_1(__ReadMaterialBlock, T3DSReadChunk, parentChunk)
+	LOCAL_VAR(TINT, numMtls, SIZE(SELF __impMtls))
+	LOCAL_VAR(TMATERIAL, mtl, INVALID_MATERIAL)
+	LOCAL_VAR(TSTRING, mtlName, EMPTY_STRING)
+	LOCAL_VAR(T3DSReadChunk, chunk, CALLF0(New3DSReadChunk))
+	LOCAL_VAR(TINT, sizeOfChunks, parentChunk.GetSubChunksSize())
+	WHILE(sizeOfChunks > 0)
+		CALLP1(chunk.ReadHeader, SELF __file)
+		ASSIGN(sizeOfChunks, sizeOfChunks - chunk.GetSize())
+		IF(chunk.GetID() == 0xA000)
+			ASSIGN(mtlName, CALLF0(SELF __file.ReadString))
+			LOCAL_VAR(TSTRING, caption, T("Reading materials"))
+			SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+			ASSIGN(mtl, NEW_MATERIAL(mtlName))
+			APPEND(SELF __impMtls, mtl)
+			APPEND(SELF __impMtlNames, mtlName)
+		ELSE_IF(chunk.GetID() == 0xA020)
+			SET_DIFFUSE_COLOR(mtl, SELF __ReadColor(chunk))
+		ELSE_IF(chunk.GetID() == 0xA200)
+			SET_DIFFUSE_MAP_FILENAME(mtl, SELF __ReadMap(chunk))
+		ELSE_IF(chunk.GetID() == 0xA010)
+			LOCAL_VAR(TCOLOR, ambColor, SELF __ReadColor(chunk))
+		ELSE_IF(chunk.GetID() == 0xA030)
+			LOCAL_VAR(TCOLOR, specColor, SELF __ReadColor(chunk))
+		ELSE_IF(chunk.GetID() == 0xA040)
+			LOCAL_VAR(TINT, shininessPercent, SELF __ReadPercent(chunk))
+		ELSE_IF(chunk.GetID() == 0xA041)
+			LOCAL_VAR(TINT, shininessStrengthPercent, SELF __ReadPercent(chunk))
+		ELSE_IF(chunk.GetID() == 0xA050)
+			LOCAL_VAR(TINT, transparencyPercent, SELF __ReadPercent(chunk))
+		ELSE_IF(chunk.GetID() == 0xA052)
+			LOCAL_VAR(TINT, transparencyFalloffPercent, SELF __ReadPercent(chunk))
+		ELSE_IF(chunk.GetID() == 0xA053)
+			LOCAL_VAR(TINT, reflectionBlurPercent, SELF __ReadPercent(chunk))
+		END_IF
+		CALLP1(chunk.SkipRest, SELF __file)
+	END_WHILE
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__ReadOneUnit, T3DSReadChunk, parentChunk)
+	ASSIGN(SELF __oneUnit, CALLF0(SELF __file.ReadFloat))
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__ReadVerticesList, T3DSReadChunk, parentChunk)
+	// reading number of vertices (single word 0..65535)
+	LOCAL_VAR(TINT, numVerts, CALLF0(SELF __file.ReadUnsignedShort))
+	
+	// reading array of vertices' coordinates
+	SET_NUM_VERTS(SELF __curObjMesh, numVerts)
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), SELF __curObjNameInFile))
+	FOR(i, 0, numVerts)
+		IF(BIT_AND(i, 63) == 0)
+			SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+		END_IF
+		LOCAL_VAR(TFLOAT, x, CALLF0(SELF __file.ReadFloat) * SELF __scaleCoef)
+		LOCAL_VAR(TFLOAT, y, CALLF0(SELF __file.ReadFloat) * SELF __scaleCoef)
+		LOCAL_VAR(TFLOAT, z, CALLF0(SELF __file.ReadFloat) * SELF __scaleCoef)
+		LOCAL_VAR(TPOINT3, pt, NEW_POINT3(x, y, z))
+		SET_VERT(SELF __curObjMesh, i, pt)
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__CreateTVFaces)
+	IF(GET_NUM_TVERTS(SELF __curObjMesh) == 0)
+		RETURN
+	END_IF
+	LOCAL_VAR(TINT, numFaces, GET_NUM_FACES(SELF __curObjMesh))
+	SET_NUM_TVFACES(SELF __curObjMesh, numFaces)
+	FOR(i, 0, numFaces)
+		LOCAL_VAR(TFACE, face, GET_FACE(SELF __curObjMesh, i))
+		LOCAL_VAR(TINT, v0, GET_FACE_VERT(face, 0))
+		LOCAL_VAR(TINT, v1, GET_FACE_VERT(face, 1))
+		LOCAL_VAR(TINT, v2, GET_FACE_VERT(face, 2))
+		LOCAL_VAR(TTVFACE, tvface, NEW_TVFACE(v0, v1, v2))
+		SET_TVFACE(SELF __curObjMesh, i, tvface)
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_FUNC_1(TMATERIAL, __FindMaterial, TSTRING, mtlName)
+	FOR(i, 0, SIZE(SELF __impMtlNames))
+		IF(STRICMP(GET_ELEM(SELF __impMtlNames, i), mtlName) == 0)
+			RETURN_VAL(GET_ELEM(SELF __impMtls, i))
+		END_IF
+	END_FOR
+	THROW(CALLF3(FormatMsg2, ErrMtlNotFound, mtlName, CALLF0(SELF __file.GetName)))
+	RETURN_VAL(INVALID_MATERIAL)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(__ReadSmoothGroupList, T3DSReadChunk, parentChunk)
+	LOCAL_VAR(TINT, numFaces, GET_NUM_FACES(SELF __curObjMesh))
+	FOR(i, 0, numFaces)
+		LOCAL_VAR(TINT, smGroup, CALLF0(SELF __file.ReadUnsignedLong))
+		SET_FACE_SMOOTH_GROUP(SELF __curObjMesh, i, smGroup)
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__ReadFacesMtlList, T3DSReadChunk, parentChunk)
+	// Reading materials and apply materials to faces
+	LOCAL_VAR(TSTRING, mtlName, CALLF0(SELF __file.ReadString))
+	LOCAL_VAR(TMATERIAL, mtl, CALLF1(SELF __FindMaterial, mtlName))
+	LOCAL_VAR(TINT, numEntries, CALLF0(SELF __file.ReadUnsignedShort))
+	LOCAL_VAR(TINT, numFaces, GET_NUM_FACES(SELF __curObjMesh))
+	FOR(i, 0, numEntries)
+		LOCAL_VAR(TINT, faceIndex, CALLF0(SELF __file.ReadUnsignedShort))
+		IF(faceIndex >= numFaces)
+			THROW(CALLF5(FormatMsg4, ErrFaceIdxOutOfRange, INT_TO_STRING(faceIndex), T("0"), INT_TO_STRING(numFaces - 1), CALLF0(SELF __file.GetName)))
+		END_IF
+		SET_FACE_MAT(SELF __curObjMesh, faceIndex, mtl)
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__ReadFacesDescription, T3DSReadChunk, parentChunk)
+	// reading number of faces (single word 0..65535)
+	LOCAL_VAR(TINT, numFaces, CALLF0(SELF __file.ReadUnsignedShort))
+	
+	// reading faces
+	SET_NUM_FACES(SELF __curObjMesh, numFaces)
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), SELF __curObjNameInFile))
+	LOCAL_VAR(TINT, numVerts, GET_NUM_VERTS(SELF __curObjMesh))
+	FOR(i, 0, numFaces)
+		IF(BIT_AND(i, 31) == 0)
+			SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+		END_IF
+		LOCAL_VAR(TINT, v0, CALLF0(SELF __file.ReadUnsignedShort))
+		LOCAL_VAR(TINT, v1, CALLF0(SELF __file.ReadUnsignedShort))
+		LOCAL_VAR(TINT, v2, CALLF0(SELF __file.ReadUnsignedShort))
+		LOCAL_VAR(TINT, flags, CALLF0(SELF __file.ReadUnsignedShort))
+		IF((v0 >= numVerts) OR (v1 >= numVerts) OR (v2 >= numVerts))
+			LOCAL_VAR(TINT, verr, v2)
+			IF(v0 >= numVerts)
+				ASSIGN(verr, v0)
+			ELSE_IF(v1 >= numVerts)
+				ASSIGN(verr, v1)
+			END_IF
+			THROW(CALLF5(FormatMsg4, ErrVertIdxOutOfRange, INT_TO_STRING(verr), T("0"), INT_TO_STRING(numVerts - 1), CALLF0(SELF __file.GetName)))
+		END_IF
+		LOCAL_VAR(TFACE, face, NEW_FACE(v0, v1, v2))
+		SET_FACE(SELF __curObjMesh, i, face)
+		LOCAL_VAR(TBOOL, visCA, (BIT_AND(flags, 0x01) != 0))
+		LOCAL_VAR(TBOOL, visBC, (BIT_AND(flags, 0x02) != 0))
+		LOCAL_VAR(TBOOL, visAB, (BIT_AND(flags, 0x04) != 0))
+		SET_EDGE_VIS(SELF __curObjMesh, i, 0, visAB)
+		SET_EDGE_VIS(SELF __curObjMesh, i, 1, visBC)
+		SET_EDGE_VIS(SELF __curObjMesh, i, 2, visCA)
+	END_FOR
+	CALLP0(SELF __CreateTVFaces)
+
+	// Reading smoothing groups and materials
+	CALLP1(parentChunk.SetDataSize, 2 + 8 * numFaces)
+	LOCAL_VAR(T3DSReadChunk, chunk, CALLF0(New3DSReadChunk))
+	LOCAL_VAR(TINT, sizeOfChunks, parentChunk.GetSubChunksSize())
+	WHILE(sizeOfChunks > 0)
+		CALLP1(chunk.ReadHeader, SELF __file)
+		ASSIGN(sizeOfChunks, sizeOfChunks - chunk.GetSize())
+		IF(chunk.GetID() == 0x4130)
+			CALLP1(SELF __ReadFacesMtlList, chunk)
+		ELSE_IF(chunk.GetID() == 0x4150)
+			CALLP1(SELF __ReadSmoothGroupList, chunk)
+		END_IF
+		CALLP1(chunk.SkipRest, SELF __file)
+	END_WHILE
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__ReadMappingCoords, T3DSReadChunk, parentChunk)
+	// reading number of texture vertices (single word 0..65535)
+	LOCAL_VAR(TINT, numTVerts, CALLF0(SELF __file.ReadUnsignedShort))
+	
+	// reading array of texture vertices' coordinates
+	SET_NUM_TVERTS(SELF __curObjMesh, numTVerts)
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), SELF __curObjNameInFile))
+	FOR(i, 0, numTVerts)
+		IF(BIT_AND(i, 63) == 0)
+			SHOW_PROGRESS_BAR(caption, 100 * CALLF0(SELF __file.GetPos) / CALLF0(SELF __file.GetSize))
+		END_IF
+		LOCAL_VAR(TFLOAT, u, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TFLOAT, v, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TUVVERT, uvvert, NEW_UVVERT(u, v))
+		SET_TVERT(SELF __curObjMesh, i, uvvert)
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__EndReadingMesh)
+	LOCAL_VAR(TARRAY(TOBJECT), objects, UPDATE_MESH(SELF __curObjMesh))
+	FOR(i, 0, SIZE(objects))
+		LOCAL_VAR(TOBJECT, obj, GET_ELEM(objects, i))
+		LOCAL_VAR(TObjectStats, objStats, CALLF0(NewObjectStats))
+		CALLP1(objStats.SetNameInFile, SELF __curObjNameInFile)
+		CALLP1(objStats.SetNameInScene, GET_OBJECT_NAME(obj))
+		CALLP1(objStats.SetNumMtls, CALCULATE_NUM_MTLS(obj))
+		CALLP1(objStats.SetNumFaces, CALCULATE_NUM_FACES(obj))
+		CALLP1(objStats.SetNumVertsInFile, CALCULATE_NUM_VERTS(obj))
+		CALLP1(objStats.SetNumVertsInScene, CALLF0(objStats.GetNumVertsInFile))
+		APPEND(SELF __impObjectStats, objStats)
+		IF(i != 0)
+			APPEND(SELF __impObjects, obj)
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__ReadMesh, T3DSReadChunk, parentChunk)
+	ASSIGN(SELF __curObj, NEW_MESH_OBJECT(SELF __curObjNameInScene))
+	SET_TRANSFORM(SELF __curObj, IDENTITY_MATRIX3)
+	ASSIGN(SELF __curObjMesh, GET_MESH(SELF __curObj))
+	APPEND(SELF __impObjects, SELF __curObj)
+	LOCAL_VAR(T3DSReadChunk, chunk, CALLF0(New3DSReadChunk))
+	LOCAL_VAR(TINT, sizeOfChunks, parentChunk.GetSubChunksSize())
+	WHILE(sizeOfChunks > 0)
+		CALLP1(chunk.ReadHeader, SELF __file)
+		ASSIGN(sizeOfChunks, sizeOfChunks - chunk.GetSize())
+		IF(chunk.GetID() == 0x4110)
+			CALLP1(SELF __ReadVerticesList, chunk)
+		ELSE_IF(chunk.GetID() == 0x4140)
+			CALLP1(SELF __ReadMappingCoords, chunk)
+		ELSE_IF(chunk.GetID() == 0x4120)
+			CALLP1(SELF __ReadFacesDescription, chunk)
+		END_IF
+		CALLP1(chunk.SkipRest, SELF __file)
+	END_WHILE
+	CALLP0(SELF __EndReadingMesh)
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__ReadObjectHidden, T3DSReadChunk, parentChunk)
+	ASSIGN(SELF __curObjHidden, TRUE)
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__ReadObjectBlock, T3DSReadChunk, parentChunk)
+	ASSIGN(SELF __curObjNameInFile, CALLF0(SELF __file.ReadString))
+	CALLP1(parentChunk.SetDataSize, STRLEN(SELF __curObjNameInFile) + 1)
+	IF(FIND_OBJECT_BY_NAME(SELF __curObjNameInFile) == INVALID_OBJECT)
+		ASSIGN(SELF __curObjNameInScene, SELF __curObjNameInFile)
+	ELSE
+		ASSIGN(SELF __curObjNameInScene, UNIQUE_OBJECT_NAME(SELF __curObjNameInFile))
+	END_IF
+	ASSIGN(SELF __curObjHidden, FALSE)
+	LOCAL_VAR(T3DSReadChunk, chunk, CALLF0(New3DSReadChunk))
+	LOCAL_VAR(TINT, sizeOfChunks, parentChunk.GetSubChunksSize())
+	WHILE(sizeOfChunks > 0)
+		CALLP1(chunk.ReadHeader, SELF __file)
+		ASSIGN(sizeOfChunks, sizeOfChunks - chunk.GetSize())
+		IF(chunk.GetID() == 0x4010)
+			CALLP1(SELF __ReadObjectHidden, chunk)
+		ELSE_IF(chunk.GetID() == 0x4100)
+			CALLP1(SELF __ReadMesh, chunk)
+		END_IF
+		CALLP1(chunk.SkipRest, SELF __file)
+	END_WHILE
+	IF(SELF __curObjHidden)
+		SHOW(SELF __curObj, FALSE)
+	END_IF
+END_MEMBER_PROC
+
+// Read 3D Editor chunk
+MEMBER_PROC_1(__Read3DEditor, T3DSReadChunk, parentChunk)
+	LOCAL_VAR(T3DSReadChunk, chunk, CALLF0(New3DSReadChunk))
+	LOCAL_VAR(TINT, sizeOfChunks, parentChunk.GetSubChunksSize())
+	WHILE(sizeOfChunks > 0)
+		CALLP1(chunk.ReadHeader, SELF __file)
+		ASSIGN(sizeOfChunks, sizeOfChunks - chunk.GetSize())
+		IF(chunk.GetID() == 0x3D3E)
+			CALLP1(SELF __ReadMeshVersion, chunk)
+		ELSE_IF(chunk.GetID() == 0xAFFF)
+			CALLP1(SELF __ReadMaterialBlock, chunk)
+		ELSE_IF(chunk.GetID() == 0x0100)
+			CALLP1(SELF __ReadOneUnit, chunk)
+		ELSE_IF(chunk.GetID() == 0x4000)
+			CALLP1(SELF __ReadObjectBlock, chunk)
+		END_IF
+		CALLP1(chunk.SkipRest, SELF __file)
+	END_WHILE
+END_MEMBER_PROC
+
+// Read main chunk
+MEMBER_PROC_1(__ReadMainChunk, T3DSReadChunk, parentChunk)
+	LOCAL_VAR(T3DSReadChunk, chunk, CALLF0(New3DSReadChunk))
+	LOCAL_VAR(TINT, sizeOfChunks, parentChunk.GetSubChunksSize())
+	WHILE(sizeOfChunks > 0)
+		CALLP1(chunk.ReadHeader, SELF __file)
+		ASSIGN(sizeOfChunks, sizeOfChunks - chunk.GetSize())
+		IF(chunk.GetID() == 0x0002)
+			CALLP1(SELF __Read3DSVersion, chunk)
+		ELSE_IF(chunk.GetID() == 0x3D3D)
+			CALLP1(SELF __Read3DEditor, chunk)
+		END_IF
+		CALLP1(chunk.SkipRest, SELF __file)
+	END_WHILE
+END_MEMBER_PROC
+
+// Set scale coefficient
+MEMBER_PROC_1(__SetSpaceTransform, TSpaceTransform, spaceTransform)
+	LOCAL_VAR(TINT, setupUnit, CALLF0(spaceTransform.GetSetupUnit))
+	IF(setupUnit == SETUPUNIT_INCH)
+		SET_SYSTEM_UNIT(UNITTYPE_INCH)
+	ELSE_IF(setupUnit == SETUPUNIT_FOOT)
+		SET_SYSTEM_UNIT(UNITTYPE_FOOT)
+	ELSE_IF(setupUnit == SETUPUNIT_MILE)
+		SET_SYSTEM_UNIT(UNITTYPE_MILE)
+	ELSE_IF(setupUnit == SETUPUNIT_MILLIMETER)
+		SET_SYSTEM_UNIT(UNITTYPE_MILLIMETER)
+	ELSE_IF(setupUnit == SETUPUNIT_CENTIMETER)
+		SET_SYSTEM_UNIT(UNITTYPE_CENTIMETER)
+	ELSE_IF(setupUnit == SETUPUNIT_METER)
+		SET_SYSTEM_UNIT(UNITTYPE_METER)
+	ELSE_IF(setupUnit == SETUPUNIT_KILOMETER)
+		SET_SYSTEM_UNIT(UNITTYPE_KILOMETER)
+	END_IF
+	ASSIGN(SELF __scaleCoef, CALLF0(spaceTransform.GetSystemUnitsPerFileUnit))
+END_MEMBER_PROC
+	
+// Public section:
+// Initialize
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __scaleCoef, 1.0)
+	ASSIGN(SELF __file, CALLF0(NewFile))
+	ASSIGN(SELF __3DSVersion, 3)
+	ASSIGN(SELF __meshVersion, 3)
+	ASSIGN(SELF __oneUnit, 1.0)
+	ASSIGN(SELF __impMtls, EMPTY_ARRAY(TMATERIAL))
+	ASSIGN(SELF __impMtlNames, EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __impObjects, EMPTY_ARRAY(TOBJECT))
+	ASSIGN(SELF __curObj, INVALID_OBJECT)
+	ASSIGN(SELF __curObjHidden, FALSE)
+	ASSIGN(SELF __curObjNameInFile, EMPTY_STRING)
+	ASSIGN(SELF __curObjMesh, INVALID_MESH)
+	ASSIGN(SELF __impObjectStats, EMPTY_ARRAY(TObjectStats))
+END_MEMBER_PROC
+
+// Read 3ds file; throws exception if failed
+MEMBER_PROC_2(Read3DSFile, TSTRING, filename, TSpaceTransform, spaceTransform)
+	CALLP0(SELF Init)
+	CALLP1(SELF __SetSpaceTransform, spaceTransform)
+	TRY
+		CALLP2(SELF __file.Open, filename, T("rb"))
+		LOCAL_VAR(T3DSReadChunk, chunk, CALLF0(New3DSReadChunk))
+		CALLP1(chunk.ReadHeader, SELF __file)
+		IF(chunk.GetID() == 0x4D4D)
+			CALLP1(SELF __ReadMainChunk, chunk)
+		ELSE
+			THROW(CALLF2(FormatMsg1, ErrFileIsNot3DS, CALLF0(SELF __file.GetName)))
+		END_IF
+		CALLP0(SELF __file.Close)
+	END_TRY
+	CATCH
+		CALLP0(SELF __file.Close)
+		// CALLP1(DelObjects, SELF __impObjects)
+		THROW_AGAIN
+	END_CATCH
+END_MEMBER_PROC
+
+// Weld vertices by the threshold specified of all the loaded meshes
+MEMBER_PROC_1(WeldVertices, TFLOAT, threshold)
+	TRY
+		FOR(i, 0, SIZE(SELF __impObjects))
+			LOCAL_VAR(TOBJECT, obj, GET_ELEM(SELF __impObjects, i))
+			LOCAL_VAR(TObjectStats, objStats, GET_ELEM(SELF __impObjectStats, i))
+			LOCAL_VAR(TSTRING, objname, CALLF0(objStats.GetNameInFile))
+			LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Welding vertices"), objname))
+			SHOW_PROGRESS_BAR(caption, 100 * i / SIZE(SELF __impObjects))
+			LOCAL_VAR(TINT, numVertsInScene, WELD_VERTICES(obj, threshold * SELF __scaleCoef))
+			CALLP1(objStats.SetNumVertsInScene, numVertsInScene)
+			SET_ELEM(SELF __impObjectStats, i, objStats)
+		END_FOR
+	END_TRY
+	CATCH
+		THROW_AGAIN
+	END_CATCH
+END_MEMBER_PROC
+
+// Get statistics for imported objects
+MEMBER_FUNC_0(REF(TARRAY(TObjectStats)), GetObjectStats)
+	RETURN_VAL(SELF __impObjectStats)
+END_MEMBER_FUNC
+
+// Replace the specified scene object with the first object loaded from 3ds file,
+// and link other loaded objects to the specified scene object, i.e.
+MEMBER_PROC_1(ReplaceObjectWithLoaded, TSTRING, objname)
+	IF(SIZE(SELF __impObjects) == 0)
+		RETURN
+	END_IF
+	TRY
+		LOCAL_VAR(TOBJECT, obj2, FIND_OBJECT_BY_NAME(objname))
+		LOCAL_VAR(TMATRIX3, tm, GET_TRANSFORM(obj2))
+
+		LOCAL_VAR(TOBJECT, obj, GET_ELEM(SELF __impObjects, 0))
+		REPLACE_OBJECT(obj2, obj)
+
+		DELETE_OBJECT(obj)
+		SET_ELEM(SELF __impObjects, 0, obj2)
+
+		LOCAL_VAR(TObjectStats, objst, GET_ELEM(SELF __impObjectStats, 0))
+		CALLP1(objst.SetNameInScene, objname)
+		SET_ELEM(SELF __impObjectStats, 0, objst)
+		
+		FOR(j, 1, SIZE(SELF __impObjects))
+			ASSIGN(obj, GET_ELEM(SELF __impObjects, j))
+			SET_PARENT(obj, obj2)
+			SET_TRANSFORM(obj, tm)
+		END_FOR
+	END_TRY
+	CATCH
+		THROW_AGAIN
+	END_CATCH
+END_MEMBER_PROC
+
+END_CLASS // T3DSFileLoader
+
+
+// Create an object of the "T3DSFileLoader" class
+GLOBAL_FUNC_0(T3DSFileLoader, New3DSFileLoader)
+	LOCAL_VAR(T3DSFileLoader, loader, NEW_VAL(T3DSFileLoader))
+	CALLP0(loader.Init)
+	RETURN_VAL(loader)
+END_GLOBAL_FUNC
+
+#endif // _3DS_FILE_LOADER_META

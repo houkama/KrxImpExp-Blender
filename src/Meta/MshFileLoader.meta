@@ -1,0 +1,363 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        MSHFileLoader.meta
+// Purpose:     Definition of TMSHFileLoader class.
+// Author:      Vitaly Baranov
+// Created:     June 5, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef MSH_FILE_LOADER_META
+#define MSH_FILE_LOADER_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "FormatMsg.meta"
+#include "ObjectStats.meta"
+#include "SpaceTransform.meta"
+#include "ZenArchive.meta"
+#include "ObjArrayUtils.meta"
+
+// Error messages
+#define ErrFileIsNotMSH			  T("File is not a compiled mesh.\nFile name: \"%1\".")
+#define ErrMshVersionNotSupported T("Msh version is not supported.\nMsh version: %1.\nFile name: \"%2\".")
+#define ErrMaterialChunkExpected  T("A chunk of class \"zCMaterial\" expected here.\nPosition: %1.\nFile name: \"%2\".")
+#define ErrMatIDOutOfRange		  T("Material ID is out of range while reading chunk 0xB050.\nMaterial ID: %1 (Allowable range: %2..%3).\nFile name: \"%4\".")
+#define ErrVertIdxOutOfRange	  T("Vertex index is out of range while reading chunk 0xB050.\nVertex index: %1 (Allowable range: %2..%3).\nFile name: \"%4\".")
+#define ErrTVertIdxOutOfRange	  T("Texture vertex index is out of range while reading chunk 0xB050.\nTexture vertex index: %1 (Allowable range: %2..%3).\nFile name: \"%4\".")
+
+// Class for loading a msh file
+CLASS(TMSHFileLoader)
+
+// Private section:
+MEMBER_VAR(TFile,             __file)
+MEMBER_VAR(TFLOAT,            __scaleCoef)
+MEMBER_VAR(TARRAY(TMATERIAL), __impMtls)
+MEMBER_VAR(TINT,              __mshVersion)
+MEMBER_VAR(TARRAY(TOBJECT),   __impObjects)
+MEMBER_VAR(TARRAY(TObjectStats), __impObjectStats)
+MEMBER_VAR(TOBJECT,           __curObj)
+MEMBER_VAR(TSTRING,           __curNameInFile)
+MEMBER_VAR(TSTRING,           __curNameInScene)
+MEMBER_VAR(TMESH,             __curMesh)
+MEMBER_VAR(TINT,              __numTriFaces)
+
+// Set scale coefficient
+MEMBER_PROC_1(__SetSpaceTransform, TSpaceTransform, spaceTransform)
+	LOCAL_VAR(TINT, setupUnit, CALLF0(spaceTransform.GetSetupUnit))
+	IF(setupUnit == SETUPUNIT_INCH)
+		SET_SYSTEM_UNIT(UNITTYPE_INCH)
+	ELSE_IF(setupUnit == SETUPUNIT_FOOT)
+		SET_SYSTEM_UNIT(UNITTYPE_FOOT)
+	ELSE_IF(setupUnit == SETUPUNIT_MILE)
+		SET_SYSTEM_UNIT(UNITTYPE_MILE)
+	ELSE_IF(setupUnit == SETUPUNIT_MILLIMETER)
+		SET_SYSTEM_UNIT(UNITTYPE_MILLIMETER)
+	ELSE_IF(setupUnit == SETUPUNIT_CENTIMETER)
+		SET_SYSTEM_UNIT(UNITTYPE_CENTIMETER)
+	ELSE_IF(setupUnit == SETUPUNIT_METER)
+		SET_SYSTEM_UNIT(UNITTYPE_METER)
+	ELSE_IF(setupUnit == SETUPUNIT_KILOMETER)
+		SET_SYSTEM_UNIT(UNITTYPE_KILOMETER)
+	END_IF
+	ASSIGN(SELF __scaleCoef, CALLF0(spaceTransform.GetSystemUnitsPerFileUnit))
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__ReadMshVersion)
+	ASSIGN(SELF __mshVersion, CALLF0(SELF __file.ReadUnsignedShort))
+	IF((SELF __mshVersion != 0x0009) AND (SELF __mshVersion != 0x0109))
+		THROW(CALLF3(FormatMsg2, ErrMshVersionNotSupported, HEXFORM(SELF __mshVersion), CALLF0(SELF __file.GetName)))
+	END_IF
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__ReadMaterials)
+	LOCAL_VAR(TZENArchive, zarc, CALLF0(NewZENArchive))
+	CALLP1(zarc.ReadHeader, SELF __file)
+	LOCAL_VAR(TINT, numMaterials, CALLF0(SELF __file.ReadUnsignedLong))
+	FOR(i, 0, numMaterials)
+		LOCAL_VAR(TSTRING, caption, T("Reading materials"))
+		SHOW_PROGRESS_BAR(caption, 100 * i / numMaterials)
+		LOCAL_VAR(TSTRING, name, CALLF1(zarc.ReadString, SELF __file))
+		LOCAL_VAR(TINT, pos, CALLF0(SELF __file.GetPos))
+		LOCAL_VAR(TZENChunk, zchunk, CALLF1(zarc.ReadChunkStart, SELF __file))
+		IF(CALLF0(zchunk.GetClassName) != T("zCMaterial"))
+			THROW(CALLF3(FormatMsg2, ErrMaterialChunkExpected, HEXFORM(pos), CALLF0(SELF __file.GetName)))
+		END_IF	
+		ASSIGN(name, CALLF0(SELF __file.ReadString))
+		LOCAL_VAR(TINT, matGroup, CALLF0(SELF __file.ReadUnsignedChar))
+		LOCAL_VAR(TINT, blue,  CALLF0(SELF __file.ReadUnsignedChar))
+		LOCAL_VAR(TINT, green, CALLF0(SELF __file.ReadUnsignedChar))
+		LOCAL_VAR(TINT, red,   CALLF0(SELF __file.ReadUnsignedChar))
+		LOCAL_VAR(TINT, alpha, CALLF0(SELF __file.ReadUnsignedChar))
+		LOCAL_VAR(TCOLOR, clr, NEW_COLOR(red / 255., green / 255., blue / 255.))
+		LOCAL_VAR(TFLOAT, smoothAngle, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TSTRING, texture, CALLF0(SELF __file.ReadString))
+		CALLP2(zarc.ReadChunkEnd, SELF __file, zchunk)
+
+		LOCAL_VAR(TMATERIAL, mtl, NEW_MATERIAL(name))
+		APPEND(SELF __impMtls, mtl)
+		SET_DIFFUSE_COLOR(mtl, clr)
+		SET_DIFFUSE_MAP_FILENAME(mtl, texture)
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__CreateObject)
+	ASSIGN(SELF __curNameInFile, T("zengin"))
+	IF(FIND_OBJECT_BY_NAME(SELF __curNameInFile) == INVALID_OBJECT)
+		ASSIGN(SELF __curNameInScene, SELF __curNameInFile)
+	ELSE
+		ASSIGN(SELF __curNameInScene, UNIQUE_OBJECT_NAME(SELF __curNameInFile))
+	END_IF
+	ASSIGN(SELF __curObj, NEW_MESH_OBJECT(SELF __curNameInScene))
+	ASSIGN(SELF __curMesh, GET_MESH(SELF __curObj))
+	APPEND(SELF __impObjects, SELF __curObj)
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__ReadVertices)
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), SELF __curNameInFile))
+	LOCAL_VAR(TINT, numVerts, CALLF0(SELF __file.ReadUnsignedLong))
+	SET_NUM_VERTS(SELF __curMesh, numVerts)
+	FOR(i, 0, numVerts)
+		IF(BIT_AND(i, 63) == 0)
+			SHOW_PROGRESS_BAR(caption, 25 * i / numVerts)
+		END_IF	
+		LOCAL_VAR(TFLOAT, x, CALLF0(SELF __file.ReadFloat) * SELF __scaleCoef)
+		LOCAL_VAR(TFLOAT, z, CALLF0(SELF __file.ReadFloat) * SELF __scaleCoef)
+		LOCAL_VAR(TFLOAT, y, CALLF0(SELF __file.ReadFloat) * SELF __scaleCoef)
+		LOCAL_VAR(TPOINT3, pt, NEW_POINT3(x, y, z))
+		SET_VERT(SELF __curMesh, i, pt)
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__ReadUVMapping)
+	LOCAL_VAR(TINT, numTVerts, CALLF0(SELF __file.ReadUnsignedLong))
+	SET_NUM_TVERTS(SELF __curMesh, numTVerts)
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), SELF __curNameInFile))
+	FOR(i, 0, numTVerts)
+		IF(BIT_AND(i, 63) == 0)
+			SHOW_PROGRESS_BAR(caption, 25 + 25 * i / numTVerts)
+		END_IF	
+		LOCAL_VAR(TFLOAT, u, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TFLOAT, v, -CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TINT, clrStaticLight, CALLF0(SELF __file.ReadUnsignedLong))
+		LOCAL_VAR(TFLOAT, normalX, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TFLOAT, normalY, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TFLOAT, normalZ, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TUVVERT, uvvert, NEW_UVVERT(u, v))
+		SET_TVERT(SELF __curMesh, i, uvvert)		
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__CountTriFaces)
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), SELF __curNameInFile))
+	LOCAL_VAR(TINT, pos, CALLF0(SELF __file.GetPos))
+	ASSIGN(SELF __numTriFaces, 0)
+	LOCAL_VAR(TINT, numFaces, CALLF0(SELF __file.ReadUnsignedLong))
+	FOR(i, 0, numFaces)
+		IF(BIT_AND(i, 63) == 0)
+			SHOW_PROGRESS_BAR(caption, 50 + 25 * i / numFaces)
+		END_IF	
+		LOCAL_VAR(TINT, matID, CALLF0(SELF __file.ReadUnsignedShort))
+		LOCAL_VAR(TINT, lightMapID, CALLF0(SELF __file.ReadUnsignedShort))
+		LOCAL_VAR(TFLOAT, bbox1, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TFLOAT, bbox2, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TFLOAT, bbox3, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TFLOAT, bbox4, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TINT, flags, 0)
+		IF(SELF __mshVersion == 0x0009)
+			ASSIGN(flags, CALLF0(SELF __file.ReadUnsignedShort))
+		ELSE_IF(SELF __mshVersion == 0x0109)
+			ASSIGN(flags, CALLF0(SELF __file.ReadUnsignedChar))
+		END_IF
+		LOCAL_VAR(TINT, unused, CALLF0(SELF __file.ReadUnsignedShort))
+		LOCAL_VAR(TINT, numVertsInFace, CALLF0(SELF __file.ReadUnsignedChar))
+		ASSIGN(SELF __numTriFaces, SELF __numTriFaces + numVertsInFace - 2)
+
+		IF(SELF __mshVersion == 0x0009)
+			CALLP1(SELF __file.SetPos, CALLF0(SELF __file.GetPos) + 6 * numVertsInFace)
+		ELSE_IF(SELF __mshVersion == 0x0109)
+			CALLP1(SELF __file.SetPos, CALLF0(SELF __file.GetPos) + 8 * numVertsInFace)
+		END_IF
+	END_FOR
+	CALLP1(SELF __file.SetPos, pos)
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__ReadFaces)
+	SET_NUM_FACES(SELF __curMesh, SELF __numTriFaces)
+	SET_NUM_TVFACES(SELF __curMesh, SELF __numTriFaces)
+	LOCAL_VAR(TINT, triFaceIndex, 0)
+
+	LOCAL_VAR(TINT, numVerts, GET_NUM_VERTS(SELF __curMesh))
+	LOCAL_VAR(TINT, numTVerts, GET_NUM_TVERTS(SELF __curMesh))
+	LOCAL_VAR(TINT, numMaterials, SIZE(SELF __impMtls))
+	
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Reading '%1'"), SELF __curNameInFile))
+	LOCAL_VAR(TINT, numFaces, CALLF0(SELF __file.ReadUnsignedLong))
+	FOR(i, 0, numFaces)
+		IF(BIT_AND(i, 31) == 0)
+			SHOW_PROGRESS_BAR(caption, 75 + 25 * i / numFaces)
+		END_IF	
+		
+		LOCAL_VAR(TINT, matID, CALLF0(SELF __file.ReadUnsignedShort))
+		IF(matID >= numMaterials)
+			THROW(CALLF5(FormatMsg4, ErrMatIDOutOfRange, INT_TO_STRING(matID), T("0"), INT_TO_STRING(numMaterials - 1), CALLF0(SELF __file.GetName)))
+		END_IF
+		LOCAL_VAR(TMATERIAL, mat, GET_ELEM(SELF __impMtls, matID))
+
+		LOCAL_VAR(TINT, lightMapID, CALLF0(SELF __file.ReadUnsignedShort))
+		LOCAL_VAR(TFLOAT, bbox1, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TFLOAT, bbox2, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TFLOAT, bbox3, CALLF0(SELF __file.ReadFloat))
+		LOCAL_VAR(TFLOAT, bbox4, CALLF0(SELF __file.ReadFloat))
+		IF(SELF __mshVersion == 0x0009)
+			LOCAL_VAR(TINT, flags, CALLF0(SELF __file.ReadUnsignedShort))
+		ELSE_IF(SELF __mshVersion == 0x0109)
+			LOCAL_VAR(TINT, flags, CALLF0(SELF __file.ReadUnsignedChar))
+		END_IF
+		LOCAL_VAR(TINT, unused, CALLF0(SELF __file.ReadUnsignedShort))
+		LOCAL_VAR(TINT, numVertsInFace, CALLF0(SELF __file.ReadUnsignedChar))
+		LOCAL_VAR(TINT, vertIdx_0, 0)
+		LOCAL_VAR(TINT, tVertIdx_0, 0)
+		LOCAL_VAR(TINT, vertIdx_Prev, 0)
+		LOCAL_VAR(TINT, tVertIdx_Prev, 0)
+		
+		FOR(j, 0, numVertsInFace)
+			LOCAL_VAR(TINT, vertIdx, 0)
+			IF(SELF __mshVersion == 0x0009)
+				ASSIGN(vertIdx, CALLF0(SELF __file.ReadUnsignedShort))
+			ELSE_IF(SELF __mshVersion == 0x0109)
+				ASSIGN(vertIdx, CALLF0(SELF __file.ReadUnsignedLong))
+			END_IF
+			LOCAL_VAR(TINT, tVertIdx, CALLF0(SELF __file.ReadUnsignedLong))
+			IF(vertIdx >= numVerts)
+				THROW(CALLF5(FormatMsg4, ErrVertIdxOutOfRange, INT_TO_STRING(vertIdx), T("0"), INT_TO_STRING(numVerts - 1), CALLF0(SELF __file.GetName)))
+			END_IF
+			IF(tVertIdx >= numTVerts)
+				THROW(CALLF5(FormatMsg4, ErrTVertIdxOutOfRange, INT_TO_STRING(tVertIdx), T("0"), INT_TO_STRING(numTVerts - 1), CALLF0(SELF __file.GetName)))
+			END_IF
+			IF(j == 0)
+				ASSIGN(vertIdx_0, vertIdx)
+				ASSIGN(tVertIdx_0, tVertIdx)
+			END_IF
+			IF(j >= 2)
+				LOCAL_VAR(TFACE, f, NEW_FACE(vertIdx_0, vertIdx_Prev, vertIdx))
+				SET_FACE(SELF __curMesh, triFaceIndex, f)
+				LOCAL_VAR(TTVFACE, tf, NEW_TVFACE(tVertIdx_0, tVertIdx_Prev, tVertIdx))
+				SET_TVFACE(SELF __curMesh, triFaceIndex, tf)
+				SET_FACE_MAT(SELF __curMesh, triFaceIndex, mat)
+				FOR(k, 0, 3)
+					SET_EDGE_VIS(SELF __curMesh, triFaceIndex, k, TRUE)
+				END_FOR
+				ASSIGN(triFaceIndex, triFaceIndex + 1)
+			END_IF
+			ASSIGN(vertIdx_Prev, vertIdx)
+			ASSIGN(tVertIdx_Prev, tVertIdx)
+		END_FOR
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__EndReadingMesh)
+	LOCAL_VAR(TARRAY(TOBJECT), objects, UPDATE_MESH(SELF __curMesh))
+	FOR(i, 0, SIZE(objects))
+		LOCAL_VAR(TOBJECT, obj, GET_ELEM(objects, i))
+		LOCAL_VAR(TMESH, msh, GET_MESH(obj))
+		LOCAL_VAR(TObjectStats, objStats, CALLF0(NewObjectStats))
+		CALLP1(objStats.SetNameInFile, SELF __curNameInFile)
+		CALLP1(objStats.SetNameInScene, GET_OBJECT_NAME(obj))
+		CALLP1(objStats.SetNumMtls, CALCULATE_NUM_MTLS(obj))
+		CALLP1(objStats.SetNumFaces, CALCULATE_NUM_FACES(obj))
+		CALLP1(objStats.SetNumVertsInFile, CALCULATE_NUM_VERTS(obj))
+		CALLP1(objStats.SetNumVertsInScene, CALLF0(objStats.GetNumVertsInFile))
+		APPEND(SELF __impObjectStats, objStats)
+		IF(i != 0)
+			APPEND(SELF __impObjects, obj)
+		END_IF
+	END_FOR	
+END_MEMBER_PROC
+	
+// Public section:
+// Initialize
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __scaleCoef, 1.0)
+	ASSIGN(SELF __file, CALLF0(NewFile))
+	ASSIGN(SELF __mshVersion, 0)
+	ASSIGN(SELF __impMtls, EMPTY_ARRAY(TMATERIAL))
+	ASSIGN(SELF __impObjects, EMPTY_ARRAY(TOBJECT))
+	ASSIGN(SELF __curObj, INVALID_OBJECT)
+	ASSIGN(SELF __curNameInFile, EMPTY_STRING)
+	ASSIGN(SELF __curMesh, INVALID_MESH)
+	ASSIGN(SELF __impObjectStats, EMPTY_ARRAY(TObjectStats))
+	ASSIGN(SELF __numTriFaces, 0)
+END_MEMBER_PROC
+
+// Read msh file which is already opened; throws exception if failed
+MEMBER_PROC_2(ReadMSHFile2, TFile, file, TSpaceTransform, spaceTransform)
+	CALLP0(SELF Init)
+	CALLP1(SELF __SetSpaceTransform, spaceTransform)
+	ASSIGN(SELF __file, file)
+	TRY
+		LOCAL_VAR(TBOOL, fileBeginning, TRUE)
+		WHILE(NOT(CALLF0(SELF __file.Eof)))
+			LOCAL_VAR(TINT, typ, CALLF0(SELF __file.ReadUnsignedShort))
+			IF(fileBeginning AND typ != 0xB000)
+				THROW(CALLF2(FormatMsg1, ErrFileIsNotMSH, CALLF0(SELF __file.GetName)))
+			END_IF
+			ASSIGN(fileBeginning, FALSE)
+			LOCAL_VAR(TINT, sz,  CALLF0(SELF __file.ReadUnsignedLong))
+			LOCAL_VAR(TINT, chunkPos, CALLF0(SELF __file.GetPos))
+			IF(typ == 0xB000)
+				CALLP0(SELF __ReadMshVersion)
+			ELSE_IF(typ == 0xB020)
+				CALLP0(SELF __ReadMaterials)
+			ELSE_IF(typ == 0xB030)
+				CALLP0(SELF __CreateObject)
+				CALLP0(SELF __ReadVertices)
+			ELSE_IF(typ == 0xB040)
+				CALLP0(SELF __ReadUVMapping)
+			ELSE_IF(typ == 0xB050)
+				CALLP0(SELF __CountTriFaces)
+				CALLP0(SELF __ReadFaces)
+			ELSE_IF(typ == 0xB060)
+				CALLP0(SELF __EndReadingMesh)
+				BREAK
+			END_IF
+			CALLP1(SELF __file.SetPos, chunkPos + sz)
+		END_WHILE
+	END_TRY
+	CATCH
+		// CALLP1(DelObjects, SELF __impObjects)
+		THROW_AGAIN
+	END_CATCH
+END_MEMBER_PROC
+
+// Read msh file; throws exception if failed
+MEMBER_PROC_2(ReadMSHFile, TSTRING, filename, TSpaceTransform, spaceTransform)
+	CALLP0(SELF Init)
+	LOCAL_VAR(TFile, file, CALLF0(NewFile))
+	TRY
+		CALLP2(file.Open, filename, T("rb"))
+		CALLP2(SELF ReadMSHFile2, file, spaceTransform)
+		CALLP0(file.Close)
+	END_TRY
+	CATCH
+		CALLP0(file.Close)
+		THROW_AGAIN
+	END_CATCH
+END_MEMBER_PROC
+
+// Get statistics for imported objects
+MEMBER_FUNC_0(REF(TARRAY(TObjectStats)), GetObjectStats)
+	RETURN_VAL(SELF __impObjectStats)
+END_MEMBER_FUNC
+
+END_CLASS // TMSHFileLoader
+
+
+// Create an object of the "TMSHFileLoader" class
+GLOBAL_FUNC_0(TMSHFileLoader, NewMSHFileLoader)
+	LOCAL_VAR(TMSHFileLoader, loader, NEW_VAL(TMSHFileLoader))
+	CALLP0(loader.Init)
+	RETURN_VAL(loader)
+END_GLOBAL_FUNC
+
+#endif // MSH_FILE_LOADER_META

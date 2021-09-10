@@ -1,0 +1,381 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        AscImporterDlgInput.meta
+// Purpose:     Definition of TASCImporterDlgInput class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef ASC_IMPORTER_DLG_INPUT_META
+#define ASC_IMPORTER_DLG_INPUT_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "AscImporterDefs.meta"
+
+// Input dialog data for ASCII model importer
+CLASS(TASCImporterDlgInput)
+
+// Private section:
+MEMBER_VAR(TSTRING,         __importFileName)
+MEMBER_VAR(TINT,            __importFileSize)
+MEMBER_VAR(TINT,            __ascType)
+MEMBER_VAR(TINT,            __curSceneMode)
+MEMBER_VAR(TINT,            __curAnimMode)
+MEMBER_VAR(TARRAY(TSTRING), __supportedSkinTypes)
+MEMBER_VAR(TARRAY(TSTRING), __slots)
+MEMBER_VAR(TSTRING,         __selectedSlot)
+MEMBER_VAR(TARRAY(TSTRING), __bones)
+MEMBER_VAR(TSTRING,         __selectedBone)
+MEMBER_VAR(TARRAY(TSTRING), __prefixes)
+MEMBER_VAR(TSTRING,         __uniquePrefix)
+MEMBER_VAR(TSTRING,         __selectedPrefix)
+MEMBER_VAR(TINT,            __numFileMeshes)
+MEMBER_VAR(TINT,            __numFileSlots)
+MEMBER_VAR(TINT,            __numFileBones)
+MEMBER_VAR(TINT,            __animStartFrame)
+MEMBER_VAR(TINT,            __animEndFrame)
+MEMBER_VAR(TINT,            __animFrameRate)
+MEMBER_VAR(TSTRING,         __sampleMeshesDir)
+MEMBER_VAR(TINT,            __minFrame)
+MEMBER_VAR(TINT,            __maxFrame)
+MEMBER_VAR(TFLOAT,          __systemUnitsPerFileUnit)
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __importFileName,   EMPTY_STRING)
+	ASSIGN(SELF __importFileSize,   0)
+	ASSIGN(SELF __ascType,          ASCTYPE_STATIC_MESH)
+	ASSIGN(SELF __curSceneMode,     CURSCN_REPLACE_SCENE)
+	ASSIGN(SELF __curAnimMode,      CURANIM_REPLACE_ANIMATION)
+	ASSIGN(SELF __supportedSkinTypes, EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __slots,            EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedSlot,     EMPTY_STRING)
+	ASSIGN(SELF __bones,            EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedBone,     EMPTY_STRING)
+	ASSIGN(SELF __prefixes,         EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __uniquePrefix,     EMPTY_STRING)
+	ASSIGN(SELF __selectedPrefix,   EMPTY_STRING)
+	ASSIGN(SELF __numFileMeshes,    0)
+	ASSIGN(SELF __numFileSlots,     0)
+	ASSIGN(SELF __numFileBones,     0)
+	ASSIGN(SELF __animStartFrame,   0)
+	ASSIGN(SELF __animEndFrame,     100)
+	ASSIGN(SELF __animFrameRate,    25)
+	ASSIGN(SELF __sampleMeshesDir,  EMPTY_STRING)
+	ASSIGN(SELF __minFrame,         1)
+	ASSIGN(SELF __maxFrame,         1000)
+	ASSIGN(SELF __systemUnitsPerFileUnit, 1)
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(Write, TFile, f)
+	CALLP1(f.WriteString, SELF __importFileName)
+	CALLP1(f.WriteUnsignedLong, SELF __importFileSize)
+	CALLP1(f.WriteUnsignedChar, SELF __ascType)
+	CALLP1(f.WriteUnsignedChar, SELF __curSceneMode)
+	CALLP1(f.WriteUnsignedChar, SELF __curAnimMode)
+	CALLP1(f.WriteUnsignedLong, SIZE(SELF __supportedSkinTypes))
+	FOR(i, 0, SIZE(SELF __supportedSkinTypes))
+		CALLP1(f.WriteString, GET_ELEM(SELF __supportedSkinTypes, i))
+	END_FOR
+	CALLP1(f.WriteUnsignedLong, SIZE(SELF __slots))
+	FOR(i, 0, SIZE(SELF __slots))
+		CALLP1(f.WriteString, GET_ELEM(SELF __slots, i))
+	END_FOR
+	CALLP1(f.WriteString, SELF __selectedSlot)
+	CALLP1(f.WriteUnsignedLong, SIZE(SELF __bones))
+	FOR(j, 0, SIZE(SELF __bones))
+		CALLP1(f.WriteString, GET_ELEM(SELF __bones, j))
+	END_FOR
+	CALLP1(f.WriteString, SELF __selectedBone)
+	CALLP1(f.WriteUnsignedLong, SIZE(SELF __prefixes))
+	FOR(j, 0, SIZE(SELF __prefixes))
+		CALLP1(f.WriteString, GET_ELEM(SELF __prefixes, j))
+	END_FOR
+	CALLP1(f.WriteString, SELF __uniquePrefix)
+	CALLP1(f.WriteString, SELF __selectedPrefix)
+	CALLP1(f.WriteUnsignedLong, SELF __numFileMeshes)
+	CALLP1(f.WriteUnsignedLong, SELF __numFileSlots)
+	CALLP1(f.WriteUnsignedLong, SELF __numFileBones)
+	CALLP1(f.WriteSignedLong,   SELF __animStartFrame)
+	CALLP1(f.WriteSignedLong,   SELF __animEndFrame)
+	CALLP1(f.WriteUnsignedLong, SELF __animFrameRate)
+	CALLP1(f.WriteString, SELF __sampleMeshesDir)
+	CALLP1(f.WriteSignedLong,   SELF __minFrame)
+	CALLP1(f.WriteSignedLong,   SELF __maxFrame)
+	CALLP1(f.WriteFloat,        SELF __systemUnitsPerFileUnit)
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(Read, TFile, f)
+	ASSIGN(SELF __importFileName, CALLF0(f.ReadString))
+	ASSIGN(SELF __importFileSize, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __ascType, CALLF0(f.ReadUnsignedChar))
+	ASSIGN(SELF __curSceneMode, CALLF0(f.ReadUnsignedChar))
+	ASSIGN(SELF __curAnimMode, CALLF0(f.ReadUnsignedChar))
+	
+	LOCAL_VAR(TINT, numSupportedSkinTypes, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __supportedSkinTypes, EMPTY_ARRAY(TSTRING))
+	FOR(i, 0, numSupportedSkinTypes)
+		APPEND(SELF __supportedSkinTypes, CALLF0(f.ReadString))
+	END_FOR
+
+	LOCAL_VAR(TINT, numSlots, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __slots, EMPTY_ARRAY(TSTRING))
+	RESERVE(SELF __slots, numSlots)
+	FOR(i, 0, numSlots)
+		APPEND(SELF __slots, CALLF0(f.ReadString))
+	END_FOR
+	ASSIGN(SELF __selectedSlot, CALLF0(f.ReadString))
+
+	LOCAL_VAR(TINT, numBones, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __bones, EMPTY_ARRAY(TSTRING))
+	RESERVE(SELF __bones, numBones)
+	FOR(j, 0, numBones)
+		APPEND(SELF __bones, CALLF0(f.ReadString))
+	END_FOR
+	ASSIGN(SELF __selectedBone, CALLF0(f.ReadString))
+
+	LOCAL_VAR(TINT, numPrefixes, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __prefixes, EMPTY_ARRAY(TSTRING))
+	RESERVE(SELF __prefixes, numPrefixes)
+	FOR(j, 0, numPrefixes)
+		APPEND(SELF __prefixes, CALLF0(f.ReadString))
+	END_FOR
+	ASSIGN(SELF __uniquePrefix, CALLF0(f.ReadString))
+	ASSIGN(SELF __selectedPrefix, CALLF0(f.ReadString))
+
+	ASSIGN(SELF __numFileMeshes,   CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __numFileSlots,    CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __numFileBones,    CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __animStartFrame,  CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __animEndFrame,    CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __animFrameRate,   CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __sampleMeshesDir, CALLF0(f.ReadString))
+	ASSIGN(SELF __minFrame,        CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __maxFrame,        CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __systemUnitsPerFileUnit, CALLF0(f.ReadFloat))
+END_MEMBER_PROC
+
+// Import file name
+MEMBER_PROC_1(SetImportFileName, TSTRING, importFileName)
+	ASSIGN(SELF __importFileName, importFileName)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetImportFileName)
+	RETURN_VAL(SELF __importFileName)
+END_MEMBER_FUNC
+	
+// Import file size
+MEMBER_PROC_1(SetImportFileSize, TINT, importFileSize)
+	ASSIGN(SELF __importFileSize, importFileSize)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetImportFileSize)
+	RETURN_VAL(SELF __importFileSize)
+END_MEMBER_FUNC
+
+// Type of asc file imported (static mesh, morph animation, 
+// dynamic model mesh, dynamic model animation)
+MEMBER_PROC_1(SetAscType, TINT, ascType)
+	ASSIGN(SELF __ascType, ascType)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetAscType)
+	RETURN_VAL(SELF __ascType)
+END_MEMBER_FUNC
+
+// What to do with current scene 
+MEMBER_PROC_1(SetCurrentSceneMode, TINT, curSceneMode)
+	ASSIGN(SELF __curSceneMode, curSceneMode)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetCurrentSceneMode)
+	RETURN_VAL(SELF __curSceneMode)
+END_MEMBER_FUNC
+
+// What to do with current animation
+MEMBER_PROC_1(SetCurrentAnimationMode, TINT, curAnimMode)
+	ASSIGN(SELF __curAnimMode, curAnimMode)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetCurrentAnimationMode)
+	RETURN_VAL(SELF __curAnimMode)
+END_MEMBER_FUNC
+
+// Get combination of skin types supported by the 3D Editor
+MEMBER_PROC_1(SetSupportedSkinTypes, REF(TARRAY(TSTRING)), supportedSkinTypes)
+	ASSIGN(SELF __supportedSkinTypes, supportedSkinTypes)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSupportedSkinTypes)
+	RETURN_VAL(SELF __supportedSkinTypes)
+END_MEMBER_FUNC
+
+// Names of slots
+MEMBER_PROC_1(SetSlots, TARRAY(TSTRING), slots)
+	ASSIGN(SELF __slots, slots)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TARRAY(TSTRING), GetSlots)
+	RETURN_VAL(SELF __slots)
+END_MEMBER_FUNC
+
+// Selected slot name
+MEMBER_PROC_1(SetSelectedSlot, TSTRING, selectedSlot)
+	ASSIGN(SELF __selectedSlot, selectedSlot)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetSelectedSlot)
+	RETURN_VAL(SELF __selectedSlot)
+END_MEMBER_FUNC
+
+// Names of bones
+MEMBER_PROC_1(SetBones, TARRAY(TSTRING), bones)
+	ASSIGN(SELF __bones, bones)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TARRAY(TSTRING), GetBones)
+	RETURN_VAL(SELF __bones)
+END_MEMBER_FUNC
+
+// Selected bone name
+MEMBER_PROC_1(SetSelectedBone, TSTRING, selectedBone)
+	ASSIGN(SELF __selectedBone, selectedBone)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetSelectedBone)
+	RETURN_VAL(SELF __selectedBone)
+END_MEMBER_FUNC
+
+// Existing prefixes
+MEMBER_PROC_1(SetPrefixes, TARRAY(TSTRING), prefixes)
+	ASSIGN(SELF __prefixes, prefixes)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TARRAY(TSTRING), GetPrefixes)
+	RETURN_VAL(SELF __prefixes)
+END_MEMBER_FUNC
+
+// Unique prefix needed to create new model
+MEMBER_PROC_1(SetUniquePrefix, TSTRING, uniquePrefix)
+	ASSIGN(SELF __uniquePrefix, uniquePrefix)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetUniquePrefix)
+	RETURN_VAL(SELF __uniquePrefix)
+END_MEMBER_FUNC
+
+// Selected prefix
+MEMBER_PROC_1(SetSelectedPrefix, TSTRING, selectedPrefix)
+	ASSIGN(SELF __selectedPrefix, selectedPrefix)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetSelectedPrefix)
+	RETURN_VAL(SELF __selectedPrefix)
+END_MEMBER_FUNC
+
+// Number of meshes in the imported file
+MEMBER_PROC_1(SetNumFileMeshes, TINT, numFileMeshes)
+	ASSIGN(SELF __numFileMeshes, numFileMeshes)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetNumFileMeshes)
+	RETURN_VAL(SELF __numFileMeshes)
+END_MEMBER_FUNC
+
+// Number of slots in the imported file
+MEMBER_PROC_1(SetNumFileSlots, TINT, numFileSlots)
+	ASSIGN(SELF __numFileSlots, numFileSlots)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetNumFileSlots)
+	RETURN_VAL(SELF __numFileSlots)
+END_MEMBER_FUNC
+
+// Number of bones in the imported file
+MEMBER_PROC_1(SetNumFileBones, TINT, numFileBones)
+	ASSIGN(SELF __numFileBones, numFileBones)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetNumFileBones)
+	RETURN_VAL(SELF __numFileBones)
+END_MEMBER_FUNC
+
+// First frame index
+MEMBER_PROC_1(SetAnimStartFrame, TINT, frameIndex)
+	ASSIGN(SELF __animStartFrame, frameIndex)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetAnimStartFrame)
+	RETURN_VAL(SELF __animStartFrame)
+END_MEMBER_FUNC
+
+// Last frame index
+MEMBER_PROC_1(SetAnimEndFrame, TINT, frameIndex)
+	ASSIGN(SELF __animEndFrame, frameIndex)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetAnimEndFrame)
+	RETURN_VAL(SELF __animEndFrame)
+END_MEMBER_FUNC
+
+// Frames per second
+MEMBER_PROC_1(SetAnimFrameRate, TINT, frameRate)
+	ASSIGN(SELF __animFrameRate, frameRate)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetAnimFrameRate)
+	RETURN_VAL(SELF __animFrameRate)
+END_MEMBER_FUNC
+
+// Default folder with sample meshes
+MEMBER_PROC_1(SetSampleMeshesDir, TSTRING, sampleMeshesDir)
+	ASSIGN(SELF __sampleMeshesDir, sampleMeshesDir)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetSampleMeshesDir)
+	RETURN_VAL(SELF __sampleMeshesDir)
+END_MEMBER_FUNC
+
+// Mininum value for a frame index
+MEMBER_PROC_1(SetMinFrame, TINT, frameIndex)
+	ASSIGN(SELF __minFrame, frameIndex)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetMinFrame)
+	RETURN_VAL(SELF __minFrame)
+END_MEMBER_FUNC
+
+// Maxinum value for a frame index
+MEMBER_PROC_1(SetMaxFrame, TINT, frameIndex)
+	ASSIGN(SELF __maxFrame, frameIndex)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetMaxFrame)
+	RETURN_VAL(SELF __maxFrame)
+END_MEMBER_FUNC
+
+// Default (for 3D Editor) number of system units per 1 file unit
+MEMBER_PROC_1(SetSystemUnitsPerFileUnit, TFLOAT, scaleCoef)
+	ASSIGN(SELF __systemUnitsPerFileUnit, scaleCoef)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TFLOAT, GetSystemUnitsPerFileUnit)
+	RETURN_VAL(SELF __systemUnitsPerFileUnit)
+END_MEMBER_FUNC
+
+END_CLASS // T3DSImporterDlgInput
+
+
+// Global function to create object of class T3DSImporterDlgInput
+GLOBAL_FUNC_0(TASCImporterDlgInput, NewASCImporterDlgInput)
+	LOCAL_VAR(TASCImporterDlgInput, dlgInput, NEW_VAL(TASCImporterDlgInput))
+	CALLP0(dlgInput.Init)
+	RETURN_VAL(dlgInput)
+END_GLOBAL_FUNC
+
+#endif // ASC_IMPORTER_DLG_INPUT_META

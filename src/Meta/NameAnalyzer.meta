@@ -1,0 +1,141 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        NameAnalyzer.meta
+// Purpose:     Definition of TNameAnalyzer class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef NAME_ANALYZER_META
+#define NAME_ANALYZER_META
+
+#include "Meta.h"
+#include "ObjTypes.meta"
+
+// Name analyzer.
+// Example of usage:
+// LOCAL_VAR(TNameAnalyzer, a, CALLF1(AnalyzeName, T("orc12 Bip01 Head")))
+// LOCAL_VAR(TINT,  objType, CALLF0(a.GetObjectType)) // objType = OBJTYPE_BONE
+// LOCAL_VAR(TBOOL, sFull, CALLF0(a.GetFullName))   // sFull = "orc12 Bip01 Head"
+// LOCAL_VAR(TBOOL, sShort, CALLF0(a.GetFullName))  // sShort = "Bip01 Head"
+// LOCAL_VAR(TBOOL, sPrefix, CALLF0(a.GetFullName)) // sPrefix = "orc12 "
+
+CLASS(TNameAnalyzer)
+
+// Private section:
+MEMBER_VAR(TSTRING, __fullName)
+MEMBER_VAR(TSTRING, __prefix)
+MEMBER_VAR(TSTRING, __shortName)
+MEMBER_VAR(TINT,    __objType)
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __fullName,  EMPTY_STRING)
+	ASSIGN(SELF __prefix,    EMPTY_STRING)
+	ASSIGN(SELF __shortName, EMPTY_STRING)
+	ASSIGN(SELF __objType,   OBJTYPE_DUMMY)
+END_MEMBER_PROC
+
+// Analyze an object's name
+MEMBER_PROC_1(Analyze, TSTRING, fullName)
+	CALLP0(SELF Init)
+	ASSIGN(SELF __fullName, fullName)
+	ASSIGN(SELF __shortName, fullName)
+
+	LOCAL_VAR(TINT, fullLen, STRLEN(fullName))
+	FOR(i, 0, fullLen - 2)
+		LOCAL_VAR(TSTRING, s1, SUBSTR(fullName, i, i + 1))
+		IF((s1 == T("Z")) OR (s1 == T("z")))
+			LOCAL_VAR(TSTRING, s2, SUBSTR(fullName, i + 1, i + 2))
+			IF((s2 == T("S")) OR (s2 == T("s")))
+				LOCAL_VAR(TSTRING, s3, SUBSTR(fullName, i + 2, i + 3))
+				IF(s3 == T("_"))
+					ASSIGN(SELF __prefix, SUBSTR(fullName, 0, i))
+					ASSIGN(SELF __shortName, SUBSTR(fullName, i, fullLen))
+					ASSIGN(SELF __objType, OBJTYPE_SLOT)
+					RETURN
+				END_IF
+			END_IF
+		END_IF
+	END_FOR
+	
+	FOR(i, 0, fullLen - 2)
+		LOCAL_VAR(TSTRING, s1, SUBSTR(fullName, i, i + 1))
+		IF((s1 == T("Z")) OR (s1 == T("z")))
+			LOCAL_VAR(TSTRING, s2, SUBSTR(fullName, i + 1, i + 2))
+			IF((s2 == T("M")) OR (s2 == T("m")))
+				LOCAL_VAR(TSTRING, s3, SUBSTR(fullName, i + 2, i + 3))
+				IF(s3 == T("_"))
+					ASSIGN(SELF __prefix, SUBSTR(fullName, 0, i))
+					ASSIGN(SELF __shortName, SUBSTR(fullName, i, fullLen))
+					ASSIGN(SELF __objType, OBJTYPE_MESH)
+					RETURN
+				END_IF
+			END_IF
+		END_IF
+	END_FOR
+
+	FOR(i, 0, fullLen - 4)
+		LOCAL_VAR(TSTRING, s1, SUBSTR(fullName, i, i + 1))
+		IF((s1 == T("B")) OR (s1 == T("b")))
+			LOCAL_VAR(TSTRING, s2, SUBSTR(fullName, i + 1, i + 2))
+			IF((s2 == T("I")) OR (s2 == T("i")))
+				LOCAL_VAR(TSTRING, s3, SUBSTR(fullName, i + 2, i + 3))
+				IF((s3 == T("P")) OR (s3 == T("p")))
+					LOCAL_VAR(TSTRING, s4, SUBSTR(fullName, i + 3, i + 4))
+					IF(s4 == T("0"))
+						LOCAL_VAR(TSTRING, s5, SUBSTR(fullName, i + 4, i + 5))
+						IF(s5 == T("1"))
+							ASSIGN(SELF __prefix, SUBSTR(fullName, 0, i))
+							ASSIGN(SELF __shortName, SUBSTR(fullName, i, fullLen))
+							ASSIGN(SELF __objType, OBJTYPE_BONE)
+						END_IF
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+	END_FOR
+END_MEMBER_PROC
+
+// Returns object's type;
+// the object's type is one of constants: OBJTYPE_DUMMY, OBJTYPE_BONE, OBJTYPE_SLOT, OBJTYPE_MESH
+MEMBER_FUNC_0(TINT, GetObjectType)
+	RETURN_VAL(SELF __objType)
+END_MEMBER_FUNC
+
+// Returns full name of the object specified when an object of class 'TNameAnalyzer' was constructed
+MEMBER_FUNC_0(REF(TSTRING), GetFullName)
+	RETURN_VAL(SELF __fullName)
+END_MEMBER_FUNC
+
+// Returns short name of the object;
+// this short name always started with "ZS_" or "ZM_" or "Bip01"
+MEMBER_FUNC_0(REF(TSTRING), GetShortName)
+	RETURN_VAL(SELF __shortName)
+END_MEMBER_FUNC
+
+// Returns name's prefix of the object;
+// this prefix is character string before "ZS_" or "ZM_" or "Bip01"
+MEMBER_FUNC_0(REF(TSTRING), GetPrefix)
+	RETURN_VAL(SELF __prefix)
+END_MEMBER_FUNC
+
+END_CLASS // TNameAnalyzer
+
+
+// Global functions to create object of class 'TNameAnalyzer'
+GLOBAL_FUNC_0(TNameAnalyzer, NewNameAnalyzer)
+	LOCAL_VAR(TNameAnalyzer, namAnl, NEW_VAL(TNameAnalyzer))
+	CALLP0(namAnl.Init)
+	RETURN_VAL(namAnl)
+END_GLOBAL_FUNC
+
+GLOBAL_FUNC_1(TNameAnalyzer, AnalyzeName, TSTRING, fullName)
+	LOCAL_VAR(TNameAnalyzer, namAnl, CALLF0(NewNameAnalyzer))
+	CALLP1(namAnl.Analyze, fullName)
+	RETURN_VAL(namAnl)
+END_GLOBAL_FUNC
+
+#endif // NAME_ANALYZER_META

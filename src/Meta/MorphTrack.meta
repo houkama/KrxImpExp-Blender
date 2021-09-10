@@ -1,0 +1,55 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        MorphTrack.meta
+// Purpose:     Definition of TMorphTrack class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef MORPH_TRACK_META
+#define MORPH_TRACK_META
+
+#include "Meta.h"
+
+CLASS(TMorphTrack)
+
+// Private section:
+MEMBER_VAR(TARRAY(TARRAY(TPOINT3)), __sampleVerts)
+
+// Public section:
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __sampleVerts, EMPTY_ARRAY(TARRAY(TPOINT3)))
+END_MEMBER_PROC
+
+MEMBER_PROC_1(SetNumSamples, TINT, numSamples)
+	IF(SIZE(SELF __sampleVerts) != numSamples)
+		ASSIGN(SELF __sampleVerts, EMPTY_ARRAY(TARRAY(TPOINT3)))
+		FOR(j, 0, numSamples)
+			APPEND(SELF __sampleVerts, EMPTY_ARRAY(TPOINT3))
+		END_FOR
+	END_IF
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetNumSamples)
+	RETURN_VAL(SIZE(SELF __sampleVerts))
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(SetSampleVerts, TINT, sampleIdx, TARRAY(TPOINT3), verts)
+	SET_ELEM(SELF __sampleVerts, sampleIdx, verts)
+END_MEMBER_FUNC
+
+MEMBER_FUNC_1(REF(TARRAY(TPOINT3)), GetSampleVerts, TINT, sampleIdx)
+	RETURN_VAL(GET_ELEM(SELF __sampleVerts, sampleIdx))
+END_MEMBER_FUNC
+
+END_CLASS // TMorphTrack
+
+// Global function to create an instance of class TMorphTrack
+GLOBAL_FUNC_0(TMorphTrack, NewMorphTrack)
+	LOCAL_VAR(TMorphTrack, tr, NEW_VAL(TMorphTrack))
+	CALLP0(tr.Init)
+	RETURN_VAL(tr)
+END_GLOBAL_FUNC
+
+#endif // MORPH_TRACK_META

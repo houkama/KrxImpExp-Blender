@@ -1,0 +1,148 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        AscExporterDlgOutput.meta
+// Purpose:     Definition of TASCExporterDlgOutput class.
+// Author:      Vitaly Baranov
+// Created:     January 26, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef ASC_EXPORTER_DLG_OUTPUT_META
+#define ASC_EXPORTER_DLG_OUTPUT_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "SpaceTransform.meta"
+#include "TimeTransform.meta"
+#include "AscExporterDlgInput.meta"
+
+// Output dialog data for ascii model exporter
+CLASS(TASCExporterDlgOutput)
+
+// Private section:
+MEMBER_VAR(TSTRING,         __selectedPrefix)
+MEMBER_VAR(TARRAY(TSTRING), __selectedObjects)
+MEMBER_VAR(TBOOL,           __exportAnimation)
+MEMBER_VAR(TSpaceTransform, __spaceTransform)
+MEMBER_VAR(TTimeTransform,  __timeTransform)
+MEMBER_VAR(TBOOL,           __continueExport)
+
+// Public section:
+// Initialization
+MEMBER_PROC_1(Init, TASCExporterDlgInput, dlgInput)
+	ASSIGN(SELF __selectedPrefix,  CALLF0(dlgInput.GetSelectedPrefix))
+	ASSIGN(SELF __selectedObjects, CALLF0(dlgInput.GetSelectedObjects))
+	ASSIGN(SELF __exportAnimation, FALSE)
+	ASSIGN(SELF __continueExport,  TRUE)
+		
+	ASSIGN(SELF __spaceTransform, CALLF0(NewSpaceTransform))
+	CALLP1(SELF __spaceTransform.SetFileUnitsPerSystemUnit, CALLF0(dlgInput.GetFileUnitsPerSystemUnit))
+	
+	ASSIGN(SELF __timeTransform, CALLF0(NewTimeTransform))
+	CALLP1(SELF __timeTransform.SetMinFrameInScene, CALLF0(dlgInput.GetStartFrame))
+	CALLP1(SELF __timeTransform.SetMaxFrameInScene, CALLF0(dlgInput.GetEndFrame))
+	CALLP1(SELF __timeTransform.SetMinFrameInFile, -32768)
+	CALLP1(SELF __timeTransform.SetMaxFrameInFile, 32767)
+	CALLP1(SELF __timeTransform.SetStartFrameInScene, CALLF0(dlgInput.GetStartFrame))
+	CALLP1(SELF __timeTransform.SetEndFrameInScene, CALLF0(dlgInput.GetEndFrame))
+	LOCAL_VAR(TINT, frameOffset, 0)
+	IF(CALLF0(dlgInput.GetStartFrame) > 900)
+		ASSIGN(frameOffset, -1000)
+	END_IF
+	CALLP1(SELF __timeTransform.SetStartFrameInFile, CALLF0(dlgInput.GetStartFrame) + frameOffset)
+	CALLP1(SELF __timeTransform.SetEndFrameInFile, CALLF0(dlgInput.GetEndFrame) + frameOffset)	
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(Write, TFile, f)
+	CALLP1(f.WriteString, SELF __selectedPrefix)
+	LOCAL_VAR(TINT, numSelectedObjects, SIZE(SELF __selectedObjects))
+	CALLP1(f.WriteUnsignedLong, numSelectedObjects)
+	FOR(i, 0, numSelectedObjects)
+		CALLP1(f.WriteString, GET_ELEM(SELF __selectedObjects, i))
+	END_FOR
+	CALLP1(f.WriteBool,       SELF __exportAnimation)
+	CALLP1(SELF __spaceTransform.Write, f)
+	CALLP1(SELF __timeTransform.Write, f)
+	CALLP1(f.WriteBool, SELF __continueExport)
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(Read, TFile, f)
+	ASSIGN(SELF __selectedPrefix, CALLF0(f.ReadString))
+	LOCAL_VAR(TINT, numSelectedObjects, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __selectedObjects, EMPTY_ARRAY(TSTRING))
+	FOR(i, 0, numSelectedObjects)
+		APPEND(SELF __selectedObjects, CALLF0(f.ReadString))
+	END_FOR
+	ASSIGN(SELF __exportAnimation, CALLF0(f.ReadBool))
+	CALLP1(SELF __spaceTransform.Read, f)
+	CALLP1(SELF __timeTransform.Read, f)
+	ASSIGN(SELF __continueExport, CALLF0(f.ReadBool))
+END_MEMBER_PROC
+
+// Continue export (TRUE - continue, FALSE - cancel)
+MEMBER_PROC_1(SetContinueExport, TBOOL, continueExport)
+	ASSIGN(SELF __continueExport, continueExport)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TBOOL, GetContinueExport)
+	RETURN_VAL(SELF __continueExport)
+END_MEMBER_FUNC
+
+// Selected prefix
+MEMBER_PROC_1(SetSelectedPrefix, TSTRING, selectedPrefix)
+	ASSIGN(SELF __selectedPrefix, selectedPrefix)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetSelectedPrefix)
+	RETURN_VAL(SELF __selectedPrefix)
+END_MEMBER_FUNC
+
+// Array of names of selected scene objects
+MEMBER_PROC_1(SetSelectedObjects, TARRAY(TSTRING), selectedObjects)
+	ASSIGN(SELF __selectedObjects, selectedObjects)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TARRAY(TSTRING), GetSelectedObjects)
+	RETURN_VAL(SELF __selectedObjects)
+END_MEMBER_FUNC
+
+// Export animation (TRUE - export model's animation, FALSE - export model's mesh)
+MEMBER_PROC_1(SetExportAnimation, TBOOL, exportAnimation)
+	ASSIGN(SELF __exportAnimation, exportAnimation)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TBOOL, GetExportAnimation)
+	RETURN_VAL(SELF __exportAnimation)
+END_MEMBER_FUNC
+
+// Time transformation
+MEMBER_PROC_1(SetTimeTransform, TTimeTransform, timeTransform)
+	ASSIGN(SELF __timeTransform, timeTransform)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TTimeTransform), GetTimeTransform)
+	RETURN_VAL(SELF __timeTransform)
+END_MEMBER_FUNC
+
+// Space transformation
+MEMBER_PROC_1(SetSpaceTransform, TSpaceTransform, spaceTransform)
+	ASSIGN(SELF __spaceTransform, spaceTransform)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TSpaceTransform), GetSpaceTransform)
+	RETURN_VAL(SELF __spaceTransform)
+END_MEMBER_FUNC
+
+END_CLASS // TASCExporterDlgOutput class
+
+
+// Global function to create object of TASCExporterDlgOutput class
+GLOBAL_FUNC_1(TASCExporterDlgOutput, NewASCExporterDlgOutput, TASCExporterDlgInput, dlgInput)
+	LOCAL_VAR(TASCExporterDlgOutput, dlgOutput, NEW_VAL(TASCExporterDlgOutput))
+	CALLP1(dlgOutput.Init, dlgInput)
+	RETURN_VAL(dlgOutput)
+END_GLOBAL_FUNC
+
+#endif // ASC_EXPORTER_DLG_OUTPUT_META

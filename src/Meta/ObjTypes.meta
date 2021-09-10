@@ -1,0 +1,27 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        ObjTypes.meta
+// Purpose:     Types of objects
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef OBJTYPES_META
+#define OBJTYPES_META
+
+#include "Meta.h"
+
+// Object is a dummy (Dummy is an object which is not a bone, not a slot, and not a mesh)
+#define OBJTYPE_DUMMY	0
+
+// Object is a bone (The object's name is started with "Bip01")
+#define OBJTYPE_BONE	1
+
+// Object is a slot (The object's name is started with "ZS_")
+#define OBJTYPE_SLOT	2
+
+// Object is a mesh (The object's name is started with "ZM_")
+#define OBJTYPE_MESH	3
+
+#endif // OBJTYPES_META

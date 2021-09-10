@@ -1,0 +1,671 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        3dsFileSaver.meta
+// Purpose:     Definition of T3DSFileSaver class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef _3DS_FILE_SAVER_META
+#define _3DS_FILE_SAVER_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "ObjectStats.meta"
+#include "SpaceTransform.meta"
+#include "MatRenParams.meta"
+#include "3dsWriteChunk.meta"
+#include "DefaultMaterial.meta"
+
+
+// Class for saving a 3ds file
+CLASS(T3DSFileSaver)
+
+// Private section:
+MEMBER_VAR(TFile,             __file)
+MEMBER_VAR(TFLOAT,            __scaleCoef)
+MEMBER_VAR(TMatRenParams,     __matRenParams)
+MEMBER_VAR(TARRAY(TSTRING),   __objectsNames)
+MEMBER_VAR(TBOOL,             __useLocalCS)
+MEMBER_VAR(TARRAY(TOBJECT),               __expObjects)
+MEMBER_VAR(TARRAY(TMESH),                 __expMeshes)
+MEMBER_VAR(TARRAY(TARRAY(TMATERIAL)),     __expMtlsForEachObj)
+MEMBER_VAR(TARRAY(TARRAY(TMaterialDesc)), __addMtlsForEachObj)
+MEMBER_VAR(TARRAY(TMATERIAL),             __expMtls)
+MEMBER_VAR(TARRAY(TMaterialDesc),         __addMtls)
+MEMBER_VAR(TARRAY(TObjectStats),          __expObjectStats)
+MEMBER_VAR(TINT,                  __curObjIndex)
+MEMBER_VAR(TOBJECT,               __curObj)
+MEMBER_VAR(TSTRING,               __curObjName)
+MEMBER_VAR(TARRAY(TMATERIAL),     __curObjExpMtls)
+MEMBER_VAR(TARRAY(TMaterialDesc), __curObjAddMtls)
+MEMBER_VAR(TFLOAT,                __curObjTMdet)
+MEMBER_VAR(TMESH,                 __curObjMesh)
+MEMBER_VAR(TARRAY(TPOINT3),       __curObjVerts)
+MEMBER_VAR(TARRAY(TFACE),         __curObjFaces)
+MEMBER_VAR(TARRAY(TUVVERT),       __curObjTVerts)
+
+// Calculate a new name of material
+MEMBER_FUNC_1(TSTRING, __CalculateMaterialName, TMATERIAL, mat)
+	LOCAL_VAR(TSTRING, matName, GET_MATERIAL_NAME(mat))
+	
+	// portales cannot be operated
+	IF(SUBSTR(matName, 0, 2) == T("P:"))
+		RETURN_VAL(matName)
+	END_IF
+	
+	// materials without diffuse texture cannot be operated
+	LOCAL_VAR(TSTRING, texFileName, GET_DIFFUSE_MAP_FILENAME(mat))
+	IF(texFileName == EMPTY_STRING)
+		RETURN_VAL(matName)
+	END_IF
+	
+	// find material among known materials
+	LOCAL_VAR(TINT, indexTex, -1)
+	FOR(i, 0, CALLF0(SELF __matRenParams.GetNumMaterials))
+		IF(STRICMP(texFileName, CALLF1(SELF __matRenParams.GetTexture, i)) == 0)
+			ASSIGN(indexTex, i)
+			BREAK
+		END_IF
+	END_FOR
+
+	IF(indexTex != -1)
+		LOCAL_VAR(TINT, indexTexAndMat, -1)
+		FOR(i, 0, CALLF0(SELF __matRenParams.GetNumMaterials))
+			IF(STRICMP(matName, CALLF1(SELF __matRenParams.GetName, i)) == 0)
+				IF(STRICMP(texFileName, CALLF1(SELF __matRenParams.GetTexture, i)) == 0)
+					ASSIGN(indexTexAndMat, i)
+					BREAK
+				END_IF
+			END_IF
+		END_FOR
+		IF(indexTexAndMat != -1)
+			RETURN_VAL(matName)
+		ELSE
+			RETURN_VAL(CALLF1(SELF __matRenParams.GetName, indexTex))
+		END_IF
+	END_IF
+	
+	// calculate auto-name
+	IF(CALLF0(SELF __matRenParams.GetAutoNames))
+		ASSIGN(matName, texFileName)	
+		// remove extension
+		LOCAL_VAR(TINT, pos, STRLEN(matName) - 1)
+		WHILE(pos >= 0)
+			IF(SUBSTR(matName, pos, pos + 1) == T("."))
+				ASSIGN(matName, SUBSTR(matName, 0, pos))
+				BREAK
+			END_IF
+			ASSIGN(pos, pos - 1)
+		END_WHILE
+		
+		// remove directory path
+		ASSIGN(pos, STRLEN(matName) - 1)
+		WHILE(pos >= 0)
+			LOCAL_VAR(TSTRING, ch, SUBSTR(matName, pos, pos + 1))
+			IF(ch == T("\\") OR ch == T("/"))
+				ASSIGN(matName, SUBSTR(matName, pos + 1, STRLEN(matName)))
+				BREAK
+			END_IF
+			ASSIGN(pos, pos - 1)
+		END_WHILE
+	END_IF
+	RETURN_VAL(matName)
+END_MEMBER_FUNC
+
+// Create list of objects, meshes, and materials to export
+MEMBER_PROC_1(__EnumObjects, TOBJECT, obj)
+	IF(obj != ROOT_OBJECT)
+		LOCAL_VAR(TINT, index, -1)
+		FOR(i, 0, SIZE(SELF __objectsNames))
+			IF((GET_OBJECT_NAME(obj) == GET_ELEM(SELF __objectsNames, i)) AND IS_MESH_OBJECT(obj))
+				ASSIGN(index, i)
+				BREAK
+			END_IF
+		END_FOR
+		IF(index != -1)
+			LOCAL_VAR(TSTRING, caption, T("Enumerating objects"))
+			SHOW_PROGRESS_BAR(caption, index * 100 / SIZE(SELF __objectsNames))
+
+			APPEND(SELF __expObjects, obj)
+			LOCAL_VAR(TMESH, msh, GET_MESH(obj))
+			APPEND(SELF __expMeshes, msh)
+			
+			LOCAL_VAR(TARRAY(TMATERIAL), expMtlsForThisObj, EMPTY_ARRAY(TMATERIAL))
+			LOCAL_VAR(TARRAY(TMaterialDesc), addMtlsForThisObj, EMPTY_ARRAY(TMaterialDesc))
+			
+			LOCAL_VAR(TINT, numFaces, GET_NUM_FACES(msh))
+			FOR(i, 0, numFaces)
+				LOCAL_VAR(TMATERIAL, mat, GET_FACE_MAT(msh, i))
+				IF(mat == INVALID_MATERIAL)
+					IF(SIZE(addMtlsForThisObj) == 0)
+						APPEND(addMtlsForThisObj, CALLF1(GetDefaultMaterial, obj))
+					END_IF
+				ELSE
+					LOCAL_VAR(TBOOL, alreadyInList, FALSE)
+					FOR(j, 0, SIZE(expMtlsForThisObj))
+						IF(GET_ELEM(expMtlsForThisObj, j) == mat)
+							ASSIGN(alreadyInList, TRUE)
+							BREAK
+						END_IF
+					END_FOR
+					IF(NOT(alreadyInList))
+						APPEND(expMtlsForThisObj, mat)
+					END_IF
+				END_IF
+			END_FOR
+			APPEND(SELF __expMtlsForEachObj, expMtlsForThisObj)
+			APPEND(SELF __addMtlsForEachObj, addMtlsForThisObj)
+		END_IF
+	END_IF
+	LOCAL_VAR(TARRAY(TOBJECT), children, GET_CHILDREN(obj))
+	FOR(i, 0, SIZE(children))
+		CALLP1(SELF __EnumObjects, GET_ELEM(children, i))
+	END_FOR		
+END_MEMBER_PROC
+
+// Create list of all exported materials
+MEMBER_PROC_0(__MakeTotalListOfMaterials)
+	FOR(i, 0, SIZE(SELF __expMtlsForEachObj))
+		LOCAL_VAR(TSTRING, caption, T("Making total list of materials"))
+		SHOW_PROGRESS_BAR(caption, i * 90 / SIZE(SELF __expMtlsForEachObj))
+		FOR(j, 0, SIZE(GET_ELEM(SELF __expMtlsForEachObj, i)))
+			LOCAL_VAR(TMATERIAL, mat, GET_ELEM(GET_ELEM(SELF __expMtlsForEachObj, i), j))
+			LOCAL_VAR(TBOOL, alreadyInList, FALSE)
+			FOR(k, 0, SIZE(SELF __expMtls))
+				IF(GET_ELEM(SELF __expMtls, k) == mat)
+					ASSIGN(alreadyInList, TRUE)
+					BREAK
+				END_IF
+			END_FOR
+			IF(NOT(alreadyInList))
+				APPEND(SELF __expMtls, mat)
+			END_IF
+		END_FOR
+	END_FOR
+	FOR(i, 0, SIZE(SELF __addMtlsForEachObj))
+		LOCAL_VAR(TSTRING, caption, T("Making total list of materials"))
+		SHOW_PROGRESS_BAR(caption, 90 + i * 10 / SIZE(SELF __addMtlsForEachObj))
+		FOR(j, 0, SIZE(GET_ELEM(SELF __addMtlsForEachObj, i)))
+			LOCAL_VAR(REF(TMaterialDesc), matDesc, GET_ELEM(GET_ELEM(SELF __addMtlsForEachObj, i), j))
+			LOCAL_VAR(TBOOL, alreadyInList, FALSE)
+			FOR(k, 0, SIZE(SELF __addMtls))
+				IF(CALLF0(GET_ELEM(SELF __addMtls, k).GetMaterialName) == CALLF0(matDesc.GetMaterialName))
+					ASSIGN(alreadyInList, TRUE)
+					BREAK
+				END_IF
+			END_FOR
+			IF(NOT(alreadyInList))
+				APPEND(SELF __addMtls, matDesc)
+			END_IF
+		END_FOR
+	END_FOR
+END_MEMBER_PROC
+
+// Write 3DS-Version chunk
+MEMBER_PROC_1(__Write3DSVersion, TINT, version3DS)
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, 0x0002)
+	CALLP1(SELF __file.WriteUnsignedLong, version3DS)
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+// Write Mesh version chunk
+MEMBER_PROC_1(__WriteMeshVersion, TINT, meshVersion)
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, 0x3D3E)
+	CALLP1(SELF __file.WriteUnsignedLong, meshVersion)
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+// Write color
+MEMBER_PROC_2(__WriteColor, TINT, colorChunkID, TCOLOR, clr)
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, colorChunkID)
+	LOCAL_VAR(T3DSWriteChunk, subchunk, CALLF0(New3DSWriteChunk))
+	CALLP2(subchunk.WriteBegin, SELF __file, 0x0011)
+	CALLP1(SELF __file.WriteUnsignedChar, FLOAT_TO_INT(GET_RED(clr) * 255))
+	CALLP1(SELF __file.WriteUnsignedChar, FLOAT_TO_INT(GET_GREEN(clr) * 255))
+	CALLP1(SELF __file.WriteUnsignedChar, FLOAT_TO_INT(GET_BLUE(clr) * 255))
+	CALLP1(subchunk.WriteEnd, SELF __file)
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+// Write material map
+MEMBER_PROC_2(__WriteMap, TINT, mapChunkID, TSTRING, mapName)
+	IF(mapName == T(""))
+		RETURN
+	END_IF
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, mapChunkID)
+	LOCAL_VAR(T3DSWriteChunk, subchunk, CALLF0(New3DSWriteChunk))
+	CALLP2(subchunk.WriteBegin, SELF __file, 0xA300)
+	CALLP1(SELF __file.WriteString, mapName)
+	CALLP1(subchunk.WriteEnd, SELF __file)
+	CALLP1(chunk.WriteEnd, SELF __file)	
+END_MEMBER_PROC
+
+// Write material block
+MEMBER_PROC_1(__WriteMaterialBlock, REF(TMaterialDesc), mtlDesc)
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, 0xAFFF)
+	
+	LOCAL_VAR(T3DSWriteChunk, subchunk, CALLF0(New3DSWriteChunk))
+	CALLP2(subchunk.WriteBegin, SELF __file, 0xA000)
+	CALLP1(SELF __file.WriteString, CALLF0(mtlDesc.GetMaterialName))
+	CALLP1(subchunk.WriteEnd, SELF __file)
+	
+	CALLP2(SELF __WriteColor, 0xA020, CALLF0(mtlDesc.GetDiffuseColor))
+	CALLP2(SELF __WriteMap, 0xA200, CALLF0(mtlDesc.GetDiffuseMapFilename))
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__WriteOneUnit, TFLOAT, oneUnit)
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, 0x0100)
+	CALLP1(SELF __file.WriteFloat, oneUnit)
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__WriteVerticesList)
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, 0x4110)
+
+	// prepare matrix to transform vertices' coordinates to world/local coordinate system
+	LOCAL_VAR(TMATRIX3, transform, GET_OBJECT_TRANSFORM(SELF __curObj))
+	IF(SELF __useLocalCS)
+		ASSIGN(transform, MULMATMAT(transform, INVERSE(GET_TRANSFORM(SELF __curObj))))
+	END_IF
+
+	// determinant of the transformation matrix
+	ASSIGN(SELF __curObjTMdet, DETERMINANT(transform))
+		
+	// write number of vertices
+	LOCAL_VAR(TINT, numVerts, SIZE(SELF __curObjVerts))
+	CALLP1(SELF __file.WriteUnsignedShort, numVerts)
+	
+	// write each vertex coordinate
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Writing '%1'"), SELF __curObjName))
+	FOR(i, 0, numVerts)
+	
+		// show progress each 256-th vertex
+		IF(BIT_AND(i, 255) == 0)
+			SHOW_PROGRESS_BAR(caption, (50 + 10 * i / numVerts + 100 * SELF __curObjIndex) / SIZE(SELF __objectsNames))
+		END_IF
+		
+		// get vertex coordinates
+		LOCAL_VAR(TPOINT3, pt, GET_ELEM(SELF __curObjVerts, i))
+		
+		// transform coordinates of vertices
+		ASSIGN(pt, MULVECMAT(pt, transform))
+		
+		// write x, y, and z
+		CALLP1(SELF __file.WriteFloat, GET_X(pt) * SELF __scaleCoef)
+		CALLP1(SELF __file.WriteFloat, GET_Y(pt) * SELF __scaleCoef)
+		CALLP1(SELF __file.WriteFloat, GET_Z(pt) * SELF __scaleCoef)
+	END_FOR
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+MEMBER_PROC_2(__WriteFacesMtlList, TMATERIAL, mat, TSTRING, matName)
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, 0x4130)
+	CALLP1(SELF __file.WriteString, matName)
+	LOCAL_VAR(TARRAY(TINT), entries, EMPTY_ARRAY(TINT))
+	FOR(i, 0, GET_NUM_FACES(SELF __curObjMesh))
+		IF(GET_FACE_MAT(SELF __curObjMesh, i) == mat)
+			APPEND(entries, i)
+		END_IF
+	END_FOR
+	LOCAL_VAR(TINT, numEntries, SIZE(entries))
+	CALLP1(SELF __file.WriteUnsignedShort, numEntries)
+	FOR(j, 0, numEntries)
+		CALLP1(SELF __file.WriteUnsignedShort, GET_ELEM(entries, j))
+	END_FOR
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__WriteSmoothGroupList)
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, 0x4150)
+	LOCAL_VAR(TINT, numFaces, GET_NUM_FACES(SELF __curObjMesh))
+	FOR(i, 0, numFaces)
+		CALLP1(SELF __file.WriteUnsignedLong, GET_FACE_SMOOTH_GROUP(SELF __curObjMesh, i))
+	END_FOR
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__WriteMappingCoords)
+	IF(GET_NUM_TVERTS(SELF __curObjMesh) == 0)
+		RETURN
+	END_IF
+	
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, 0x4140)
+	LOCAL_VAR(TINT, numTVerts, SIZE(SELF __curObjTVerts))
+	CALLP1(SELF __file.WriteUnsignedShort, numTVerts)
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Writing '%1'"), SELF __curObjName))
+	FOR(i, 0, numTVerts)
+		
+		// show progress each 256-th vertex
+		IF(BIT_AND(i, 255) == 0)
+			SHOW_PROGRESS_BAR(caption, (60 + 15 * i / numTVerts + 100 * SELF __curObjIndex) / SIZE(SELF __objectsNames))
+		END_IF
+	
+		LOCAL_VAR(TUVVERT, uvvert, GET_ELEM(SELF __curObjTVerts, i))
+		CALLP1(SELF __file.WriteFloat, GET_U(uvvert))
+		CALLP1(SELF __file.WriteFloat, GET_V(uvvert))
+	END_FOR
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__WriteFacesDescription)
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, 0x4120)
+	
+	LOCAL_VAR(TINT, numFaces, SIZE(SELF __curObjFaces))
+	CALLP1(SELF __file.WriteUnsignedShort, numFaces)
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Writing '%1'"), SELF __curObjName))
+	
+	FOR(i, 0, numFaces)
+		// show progress each 128-th face
+		IF(BIT_AND(i, 127) == 0)
+			SHOW_PROGRESS_BAR(caption, (75 + 25 * i / numFaces + 100 * SELF __curObjIndex) / SIZE(SELF __objectsNames))
+		END_IF
+		
+		LOCAL_VAR(TFACE, face, GET_ELEM(SELF __curObjFaces, i))
+		LOCAL_VAR(TINT, v0, GET_FACE_VERT(face, 0))
+		LOCAL_VAR(TINT, v1, GET_FACE_VERT(face, 1))
+		LOCAL_VAR(TINT, v2, GET_FACE_VERT(face, 2))
+		LOCAL_VAR(TBOOL, visAB, GET_EDGE_VIS(SELF __curObjMesh, i, 0))
+		LOCAL_VAR(TBOOL, visBC, GET_EDGE_VIS(SELF __curObjMesh, i, 1))
+		LOCAL_VAR(TBOOL, visCA, GET_EDGE_VIS(SELF __curObjMesh, i, 2))
+		
+		IF(SELF __curObjTMdet < 0)
+			LOCAL_VAR(TINT, tmp, v0)
+			ASSIGN(v0, v2)
+			ASSIGN(v2, tmp)
+			LOCAL_VAR(TBOOL, tmp2, visAB)
+			ASSIGN(visAB, visBC)
+			ASSIGN(visBC, tmp2)
+		END_IF
+		
+		LOCAL_VAR(TINT, flags, 0)
+		IF(visCA)
+			ASSIGN(flags, BIT_OR(flags, 0x01))
+		END_IF
+		IF(visBC)
+			ASSIGN(flags, BIT_OR(flags, 0x02))
+		END_IF
+		IF(visAB)
+			ASSIGN(flags, BIT_OR(flags, 0x04))
+		END_IF
+		
+		CALLP1(SELF __file.WriteUnsignedShort, v0)
+		CALLP1(SELF __file.WriteUnsignedShort, v1)
+		CALLP1(SELF __file.WriteUnsignedShort, v2)
+		CALLP1(SELF __file.WriteUnsignedShort, flags)
+	END_FOR
+
+	FOR(i, 0, SIZE(SELF __curObjExpMtls))
+		LOCAL_VAR(TMATERIAL, mat, GET_ELEM(SELF __curObjExpMtls, i))
+		LOCAL_VAR(TSTRING, matName, CALLF1(SELF __CalculateMaterialName, mat))
+		CALLP2(SELF __WriteFacesMtlList, mat, matName)
+	END_FOR
+	
+	FOR(i, 0, SIZE(SELF __curObjAddMtls))
+		LOCAL_VAR(REF(TMaterialDesc), matDesc, GET_ELEM(SELF __curObjAddMtls, i))
+		LOCAL_VAR(TSTRING, matName, CALLF0(matDesc.GetMaterialName))
+		CALLP2(SELF __WriteFacesMtlList, INVALID_MATERIAL, matName)
+	END_FOR
+	
+	CALLP0(SELF __WriteSmoothGroupList)
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+// Convert MAX UVFaces into .3ds faces by adding extra 3ds verts
+// This is just to get data into .3ds
+MEMBER_PROC_0(__ConvertTo3DSFaces)
+	ASSIGN(SELF __curObjFaces, EMPTY_ARRAY(TFACE))
+	ASSIGN(SELF __curObjVerts, EMPTY_ARRAY(TPOINT3))
+	ASSIGN(SELF __curObjTVerts, EMPTY_ARRAY(TUVVERT))
+	LOCAL_VAR(TARRAY(TARRAY(TINT)), dupl, EMPTY_ARRAY(TARRAY(TINT)))
+	
+	LOCAL_VAR(TINT, numFaces, GET_NUM_FACES(SELF __curObjMesh))
+	LOCAL_VAR(TINT, numVerts, GET_NUM_VERTS(SELF __curObjMesh))
+	LOCAL_VAR(TINT, origNumVerts, numVerts)
+
+	RESERVE(SELF __curObjFaces, numFaces)
+	RESERVE(SELF __curObjVerts, 65535)
+	
+	IF(GET_NUM_TVERTS(SELF __curObjMesh) == 0)
+		FOR(i, 0, numVerts)
+			APPEND(SELF __curObjVerts, GET_VERT(SELF __curObjMesh, i))
+		END_FOR
+		FOR(i, 0, numFaces)
+			APPEND(SELF __curObjFaces, GET_FACE(SELF __curObjMesh, i))
+		END_FOR
+		RETURN
+	END_IF
+	
+	RESERVE(SELF __curObjTVerts, 65535)
+	RESERVE(dupl, origNumVerts)
+	FOR(k, 0, origNumVerts)
+		APPEND(SELF __curObjVerts, NEW_POINT3(0, 0, 0))
+		APPEND(SELF __curObjTVerts, NEW_UVVERT(0, 0))
+		APPEND(dupl, EMPTY_ARRAY(TINT))
+	END_FOR
+	
+	// for each face of the original mesh
+	LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Writing '%1'"), SELF __curObjName))
+	FOR(i, 0, numFaces)
+		
+		// show progress each 64-th face
+		IF(BIT_AND(i, 63) == 0)
+			SHOW_PROGRESS_BAR(caption, (50 * i / numFaces + 100 * SELF __curObjIndex) / SIZE(SELF __objectsNames))
+		END_IF
+	
+		LOCAL_VAR(TFACE, face, GET_FACE(SELF __curObjMesh, i))
+		LOCAL_VAR(TTVFACE, tvFace, GET_TVFACE(SELF __curObjMesh, i))
+		
+		// for each vertex and for each face of the original mesh
+        FOR(j, 0, 3)
+			LOCAL_VAR(TINT, vIndex, GET_FACE_VERT(face, j))
+			LOCAL_VAR(TPOINT3, vert, GET_VERT(SELF __curObjMesh, vIndex))
+			LOCAL_VAR(TUVVERT, tvert, GET_TVERT(SELF __curObjMesh, GET_TVFACE_VERT(tvFace, j)))
+
+			LOCAL_VAR(TARRAY(TINT), d, GET_ELEM(dupl, vIndex))
+
+			IF(SIZE(d) == 0)
+				SET_ELEM(SELF __curObjVerts, vIndex, vert)
+				SET_ELEM(SELF __curObjTVerts, vIndex, tvert)
+				APPEND(d, vIndex)
+			ELSE
+				LOCAL_VAR(TBOOL, foundMatch, FALSE)
+				FOR(z, 0, SIZE(d))
+					LOCAL_VAR(TUVVERT, uv1, GET_ELEM(SELF __curObjTVerts, GET_ELEM(d, z)))
+					IF((GET_U(uv1) == GET_U(tvert)) AND (GET_V(uv1) == GET_V(tvert)))
+						SET_FACE_VERT(face, j, GET_ELEM(d, z))
+						ASSIGN(foundMatch, TRUE)
+						BREAK
+					END_IF
+				END_FOR
+
+				IF(NOT(foundMatch))
+					SET_FACE_VERT(face, j, numVerts)
+					APPEND(d, numVerts)
+					ASSIGN(numVerts, numVerts + 1)
+					APPEND(SELF __curObjVerts, vert)
+					APPEND(SELF __curObjTVerts, tvert)
+				END_IF
+			END_IF
+	
+			SET_ELEM(dupl, vIndex, d)
+		END_FOR
+
+		// store changed (or not) face
+		APPEND(SELF __curObjFaces, face)
+	END_FOR
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__WriteMesh)
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, 0x4100)
+	CALLP0(SELF __WriteVerticesList)
+	CALLP0(SELF __WriteMappingCoords)
+	CALLP0(SELF __WriteFacesDescription)
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+MEMBER_PROC_0(__WriteObjectHidden)
+	IF(IS_VISIBLE(SELF __curObj))
+		RETURN
+	END_IF
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, 0x4010)
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+MEMBER_PROC_1(__WriteObjectBlock, TINT, i)
+	ASSIGN(SELF __curObjIndex, i)
+	ASSIGN(SELF __curObj, GET_ELEM(SELF __expObjects, i))
+	ASSIGN(SELF __curObjName, GET_OBJECT_NAME(SELF __curObj))
+	ASSIGN(SELF __curObjMesh, GET_ELEM(SELF __expMeshes, i))
+	ASSIGN(SELF __curObjExpMtls, GET_ELEM(SELF __expMtlsForEachObj, i))
+	ASSIGN(SELF __curObjAddMtls, GET_ELEM(SELF __addMtlsForEachObj, i))
+
+	LOCAL_VAR(TObjectStats, objst, CALLF0(NewObjectStats))
+	CALLP1(objst.SetNameInFile, SELF __curObjName)
+	CALLP1(objst.SetNameInScene, SELF __curObjName)
+	CALLP1(objst.SetNumMtls, SIZE(SELF __curObjExpMtls) + SIZE(SELF __curObjAddMtls))
+	CALLP1(objst.SetNumFaces, GET_NUM_FACES(SELF __curObjMesh))
+	CALLP1(objst.SetNumVertsInScene, GET_NUM_VERTS(SELF __curObjMesh))
+	CALLP1(objst.SetNumVertsInFile, GET_NUM_VERTS(SELF __curObjMesh))
+	
+	LOCAL_VAR(TBOOL, canBeSaved, TRUE)
+	IF(GET_NUM_FACES(SELF __curObjMesh) > 65535)
+		ASSIGN(canBeSaved, FALSE)
+	ELSE_IF(GET_NUM_VERTS(SELF __curObjMesh) > 65535)
+		ASSIGN(canBeSaved, FALSE)
+	ELSE
+		CALLP0(SELF __ConvertTo3DSFaces)
+		CALLP1(objst.SetNumVertsInFile, SIZE(SELF __curObjVerts))
+		IF(SIZE(SELF __curObjVerts) > 65535)
+			ASSIGN(canBeSaved, FALSE)
+		END_IF
+	END_IF
+	
+	IF(canBeSaved)
+		LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+		CALLP2(chunk.WriteBegin, SELF __file, 0x4000)
+		CALLP1(SELF __file.WriteString, SELF __curObjName)
+		CALLP0(SELF __WriteObjectHidden)
+		CALLP0(SELF __WriteMesh)
+		CALLP1(chunk.WriteEnd, SELF __file)
+	END_IF
+
+	APPEND(SELF __expObjectStats, objst)	
+END_MEMBER_PROC
+
+// Write 3D Editor chunk
+MEMBER_PROC_0(__Write3DEditor)
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, 0x3D3D)
+	CALLP1(SELF __WriteMeshVersion, 3)
+	FOR(i, 0, SIZE(SELF __expMtls))
+		LOCAL_VAR(TMATERIAL, mat, GET_ELEM(SELF __expMtls, i))
+		LOCAL_VAR(TMaterialDesc, matDesc, CALLF0(NewMaterialDesc))
+		CALLP1(matDesc.SetMaterialName, CALLF1(SELF __CalculateMaterialName, mat))
+		CALLP1(matDesc.SetDiffuseColor, GET_DIFFUSE_COLOR(mat))
+		CALLP1(matDesc.SetDiffuseMapFilename, GET_DIFFUSE_MAP_FILENAME(mat))
+		LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Writing materials"), CALLF0(matDesc.GetMaterialName)))
+		SHOW_PROGRESS_BAR(caption, i)
+		CALLP1(SELF __WriteMaterialBlock, matDesc)
+	END_FOR
+	FOR(i, 0, SIZE(SELF __addMtls))
+		LOCAL_VAR(REF(TMaterialDesc), matDesc, GET_ELEM(SELF __addMtls, i))
+		LOCAL_VAR(TSTRING, caption, CALLF2(FormatMsg1, T("Writing materials"), CALLF0(matDesc.GetMaterialName)))
+		SHOW_PROGRESS_BAR(caption, 95 + 5 * i / SIZE(SELF __addMtls))
+		CALLP1(SELF __WriteMaterialBlock, matDesc)
+	END_FOR
+	CALLP1(SELF __WriteOneUnit, 1)
+	FOR(i, 0, SIZE(SELF __expObjects))
+		CALLP1(SELF __WriteObjectBlock, i)
+	END_FOR
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+// Write main chunk
+MEMBER_PROC_0(__WriteMainChunk)
+	LOCAL_VAR(T3DSWriteChunk, chunk, CALLF0(New3DSWriteChunk))
+	CALLP2(chunk.WriteBegin, SELF __file, 0x4D4D)
+	CALLP1(SELF __Write3DSVersion, 3)
+	CALLP0(SELF __Write3DEditor)
+	CALLP1(chunk.WriteEnd, SELF __file)
+END_MEMBER_PROC
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __file,              CALLF0(NewFile))
+	ASSIGN(SELF __scaleCoef,         1.0)
+	ASSIGN(SELF __matRenParams,      CALLF0(NewMatRenParams))
+	ASSIGN(SELF __objectsNames,      EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __useLocalCS,        TRUE)
+	ASSIGN(SELF __expObjects,            EMPTY_ARRAY(TOBJECT))
+	ASSIGN(SELF __expMeshes,             EMPTY_ARRAY(TMESH))
+	ASSIGN(SELF __expMtlsForEachObj,     EMPTY_ARRAY(TARRAY(TMATERIAL)))
+	ASSIGN(SELF __addMtlsForEachObj,     EMPTY_ARRAY(TARRAY(TMaterialDesc)))
+	ASSIGN(SELF __expMtls,               EMPTY_ARRAY(TMATERIAL))
+	ASSIGN(SELF __addMtls,               EMPTY_ARRAY(TMaterialDesc))
+	ASSIGN(SELF __expObjectStats,        EMPTY_ARRAY(TObjectStats))
+	ASSIGN(SELF __curObjIndex,       -1)
+	ASSIGN(SELF __curObj,            INVALID_OBJECT)
+	ASSIGN(SELF __curObjName,        EMPTY_STRING)
+	ASSIGN(SELF __curObjExpMtls,     EMPTY_ARRAY(TMATERIAL))
+	ASSIGN(SELF __curObjAddMtls,     EMPTY_ARRAY(TMaterialDesc))
+	ASSIGN(SELF __curObjTMdet,       0)
+	ASSIGN(SELF __curObjMesh,        INVALID_MESH)
+	ASSIGN(SELF __curObjVerts,       EMPTY_ARRAY(TPOINT3))
+	ASSIGN(SELF __curObjFaces,       EMPTY_ARRAY(TFACE))
+	ASSIGN(SELF __curObjTVerts,      EMPTY_ARRAY(TUVVERT))
+END_MEMBER_PROC
+
+// Write 3ds file; throws exception if failed
+MEMBER_PROC_5(Write3DSFile, TSTRING, filename, TARRAY(TSTRING), objectsNames, TBOOL, useLocalCS, TSpaceTransform, spaceTransform, TSTRING, matRenParamsPath)
+	CALLP0(SELF Init)
+	ASSIGN(SELF __objectsNames, objectsNames)
+	ASSIGN(SELF __useLocalCS, useLocalCS)
+	ASSIGN(SELF __scaleCoef, CALLF0(spaceTransform.GetFileUnitsPerSystemUnit))
+	CALLP1(SELF __matRenParams.LoadTextFile, matRenParamsPath)
+	TRY
+		CALLP2(SELF __file.Open, filename, T("wb"))
+		CALLP1(SELF __EnumObjects, ROOT_OBJECT)
+		CALLP0(SELF __MakeTotalListOfMaterials)
+		CALLP0(SELF __WriteMainChunk)
+		CALLP0(SELF __file.Close)
+	END_TRY
+	CATCH
+		CALLP0(SELF __file.Close)
+		DELETE_FILE(filename)
+		THROW_AGAIN
+	END_CATCH
+END_MEMBER_PROC
+
+// Get statistics for exported objects
+MEMBER_FUNC_0(REF(TARRAY(TObjectStats)), GetObjectStats)
+	RETURN_VAL(SELF __expObjectStats)
+END_MEMBER_FUNC
+
+END_CLASS // T3DSFileLoader
+
+
+// Create an object of the "T3DSFileSaver" class
+GLOBAL_FUNC_0(T3DSFileSaver, New3DSFileSaver)
+	LOCAL_VAR(T3DSFileSaver, saver, NEW_VAL(T3DSFileSaver))
+	CALLP0(saver.Init)
+	RETURN_VAL(saver)
+END_GLOBAL_FUNC
+
+#endif // _3DS_FILE_SAVER_META

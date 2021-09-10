@@ -1,0 +1,224 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        AscImporterDlgOutput.meta
+// Purpose:     Definition of TASCImporterDlgOutput class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef ASC_IMPORTER_DLG_OUTPUT_META
+#define ASC_IMPORTER_DLG_OUTPUT_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "SpaceTransform.meta"
+#include "TimeTransform.meta"
+#include "AscImporterDefs.meta"
+#include "AscImporterDlgInput.meta"
+
+// Output dialog data for ASCII model importer
+CLASS(TASCImporterDlgOutput)
+
+// Private section:
+MEMBER_VAR(TINT,    __curSceneMode)
+MEMBER_VAR(TINT,    __curAnimMode)
+MEMBER_VAR(TSTRING, __selectedSkinType)
+MEMBER_VAR(TBOOL,   __connectBones)
+MEMBER_VAR(TBOOL,   __useSampleMeshes)
+MEMBER_VAR(TSTRING, __sampleMeshesDir)
+MEMBER_VAR(TSTRING, __selectedSlot)
+MEMBER_VAR(TSTRING, __selectedBone)
+MEMBER_VAR(TSTRING, __selectedPrefix)
+MEMBER_VAR(TSpaceTransform, __spaceTransform)
+MEMBER_VAR(TTimeTransform,  __timeTransform)
+MEMBER_VAR(TBOOL,   __continueImport)
+
+// Public section:
+// Initialization
+MEMBER_PROC_1(Init, TASCImporterDlgInput, dlgInput)
+	ASSIGN(SELF __curSceneMode,     CALLF0(dlgInput.GetCurrentSceneMode))
+	ASSIGN(SELF __curAnimMode,      CALLF0(dlgInput.GetCurrentAnimationMode))
+	ASSIGN(SELF __connectBones,     TRUE)
+	ASSIGN(SELF __useSampleMeshes,  TRUE)
+	ASSIGN(SELF __sampleMeshesDir,  CALLF0(dlgInput.GetSampleMeshesDir))
+	ASSIGN(SELF __selectedSlot,     CALLF0(dlgInput.GetSelectedSlot))
+	ASSIGN(SELF __selectedBone,     CALLF0(dlgInput.GetSelectedBone))
+	ASSIGN(SELF __selectedPrefix,   CALLF0(dlgInput.GetSelectedPrefix))
+	ASSIGN(SELF __continueImport,   TRUE)
+
+	ASSIGN(SELF __selectedSkinType, T(""))
+	LOCAL_VAR(REF(TARRAY(TSTRING)), supportedSkinTypes, CALLF0(dlgInput.GetSupportedSkinTypes))
+	IF(SIZE(supportedSkinTypes) != 0)
+		ASSIGN(SELF __selectedSkinType, GET_ELEM(supportedSkinTypes, 0))
+	END_IF
+	
+	ASSIGN(SELF __spaceTransform, CALLF0(NewSpaceTransform))
+	CALLP1(SELF __spaceTransform.SetSystemUnitsPerFileUnit, CALLF0(dlgInput.GetSystemUnitsPerFileUnit))
+	
+	ASSIGN(SELF __timeTransform, CALLF0(NewTimeTransform))
+	CALLP1(SELF __timeTransform.SetMinFrameInFile, CALLF0(dlgInput.GetAnimStartFrame))
+	CALLP1(SELF __timeTransform.SetMaxFrameInFile, CALLF0(dlgInput.GetAnimEndFrame))
+	CALLP1(SELF __timeTransform.SetMinFrameInScene, CALLF0(dlgInput.GetMinFrame))
+	CALLP1(SELF __timeTransform.SetMaxFrameInScene, CALLF0(dlgInput.GetMaxFrame))
+	CALLP1(SELF __timeTransform.SetStartFrameInFile, CALLF0(dlgInput.GetAnimStartFrame))
+	CALLP1(SELF __timeTransform.SetEndFrameInFile, CALLF0(dlgInput.GetAnimEndFrame))
+	LOCAL_VAR(TINT, frameOffset, 0)
+	IF(CALLF0(dlgInput.GetAnimStartFrame) < CALLF0(dlgInput.GetMinFrame))
+		ASSIGN(frameOffset, 1000)
+	END_IF
+	CALLP1(SELF __timeTransform.SetStartFrameInScene, CALLF0(dlgInput.GetAnimStartFrame) + frameOffset)
+	CALLP1(SELF __timeTransform.SetEndFrameInScene, CALLF0(dlgInput.GetAnimEndFrame) + frameOffset)
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(Write, TFile, f)
+	CALLP1(f.WriteUnsignedChar, SELF __curSceneMode)
+	CALLP1(f.WriteUnsignedChar, SELF __curAnimMode)
+	CALLP1(f.WriteString,       SELF __selectedSkinType)
+	CALLP1(f.WriteBool,         SELF __connectBones)
+	CALLP1(f.WriteBool,         SELF __useSampleMeshes)
+	CALLP1(f.WriteString,       SELF __sampleMeshesDir)
+	CALLP1(f.WriteString,       SELF __selectedSlot)
+	CALLP1(f.WriteString,       SELF __selectedBone)
+	CALLP1(f.WriteString,       SELF __selectedPrefix)
+	CALLP1(SELF __spaceTransform.Write, f)
+	CALLP1(SELF __timeTransform.Write, f)
+	CALLP1(f.WriteBool,         SELF __continueImport)
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(Read, TFile, f)
+	ASSIGN(SELF __curSceneMode, CALLF0(f.ReadUnsignedChar))
+	ASSIGN(SELF __curAnimMode, CALLF0(f.ReadUnsignedChar))
+	ASSIGN(SELF __selectedSkinType, CALLF0(f.ReadString))
+	ASSIGN(SELF __connectBones, CALLF0(f.ReadBool))
+	ASSIGN(SELF __useSampleMeshes, CALLF0(f.ReadBool))
+	ASSIGN(SELF __sampleMeshesDir, CALLF0(f.ReadString))
+	ASSIGN(SELF __selectedSlot, CALLF0(f.ReadString))
+	ASSIGN(SELF __selectedBone, CALLF0(f.ReadString))
+	ASSIGN(SELF __selectedPrefix, CALLF0(f.ReadString))
+	CALLP1(SELF __spaceTransform.Read, f)
+	CALLP1(SELF __timeTransform.Read, f)
+	ASSIGN(SELF __continueImport, CALLF0(f.ReadBool))
+END_MEMBER_PROC
+
+// What to do with current scene 
+MEMBER_PROC_1(SetCurrentSceneMode, TINT, curSceneMode)
+	ASSIGN(SELF __curSceneMode, curSceneMode)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetCurrentSceneMode)
+	RETURN_VAL(SELF __curSceneMode)
+END_MEMBER_FUNC
+
+// What to do with current animation
+MEMBER_PROC_1(SetCurrentAnimationMode, TINT, curAnimMode)
+	ASSIGN(SELF __curAnimMode, curAnimMode)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetCurrentAnimationMode)
+	RETURN_VAL(SELF __curAnimMode)
+END_MEMBER_FUNC
+
+// Method to use for skinning
+MEMBER_PROC_1(SetSelectedSkinType, TSTRING, selectedSkinType)
+	ASSIGN(SELF __selectedSkinType, selectedSkinType)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetSelectedSkinType)
+	RETURN_VAL(SELF __selectedSkinType)
+END_MEMBER_FUNC
+
+// Try to connect bones (don't try if it is FALSE)
+MEMBER_PROC_1(SetConnectBones, TBOOL, connectBones)
+	ASSIGN(SELF __connectBones, connectBones)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetConnectBones)
+	RETURN_VAL(SELF __connectBones)
+END_MEMBER_FUNC
+
+// Use sample meshes for slots and bones (don't use if it is FALSE)
+MEMBER_PROC_1(SetUseSampleMeshes, TBOOL, useSampleMeshes)
+	ASSIGN(SELF __useSampleMeshes, useSampleMeshes)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetUseSampleMeshes)
+	RETURN_VAL(SELF __useSampleMeshes)
+END_MEMBER_FUNC
+
+// Path to folder with sample meshes
+MEMBER_PROC_1(SetSampleMeshesDir, TSTRING, sampleMeshesDir)
+	ASSIGN(SELF __sampleMeshesDir, sampleMeshesDir)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetSampleMeshesDir)
+	RETURN_VAL(SELF __sampleMeshesDir)
+END_MEMBER_FUNC
+
+// Selected slot name
+MEMBER_PROC_1(SetSelectedSlot, TSTRING, selectedSlot)
+	ASSIGN(SELF __selectedSlot, selectedSlot)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetSelectedSlot)
+	RETURN_VAL(SELF __selectedSlot)
+END_MEMBER_FUNC
+
+// Selected bone name
+MEMBER_PROC_1(SetSelectedBone, TSTRING, selectedBone)
+	ASSIGN(SELF __selectedBone, selectedBone)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetSelectedBone)
+	RETURN_VAL(SELF __selectedBone)
+END_MEMBER_FUNC
+
+// Selected prefix
+MEMBER_PROC_1(SetSelectedPrefix, TSTRING, selectedPrefix)
+	ASSIGN(SELF __selectedPrefix, selectedPrefix)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetSelectedPrefix)
+	RETURN_VAL(SELF __selectedPrefix)
+END_MEMBER_FUNC
+
+// Time transformation
+MEMBER_PROC_1(SetTimeTransform, TTimeTransform, timeTransform)
+	ASSIGN(SELF __timeTransform, timeTransform)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TTimeTransform), GetTimeTransform)
+	RETURN_VAL(SELF __timeTransform)
+END_MEMBER_FUNC
+
+// Space transformation
+MEMBER_PROC_1(SetSpaceTransform, TSpaceTransform, spaceTransform)
+	ASSIGN(SELF __spaceTransform, spaceTransform)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TSpaceTransform), GetSpaceTransform)
+	RETURN_VAL(SELF __spaceTransform)
+END_MEMBER_FUNC
+
+// Continue import (TRUE - continue, FALSE - cancel)
+MEMBER_PROC_1(SetContinueImport, TBOOL, continueImport)
+	ASSIGN(SELF __continueImport, continueImport)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TBOOL, GetContinueImport)
+	RETURN_VAL(SELF __continueImport)
+END_MEMBER_FUNC
+
+END_CLASS // TASCImporterDlgInput
+
+
+// Global function to create object of class T3DSImporterDlgOutput
+GLOBAL_FUNC_1(TASCImporterDlgOutput, NewASCImporterDlgOutput, TASCImporterDlgInput, dlgInput)
+	LOCAL_VAR(TASCImporterDlgOutput, dlgOutput, NEW_VAL(TASCImporterDlgOutput))
+	CALLP1(dlgOutput.Init, dlgInput)
+	RETURN_VAL(dlgOutput)
+END_GLOBAL_FUNC
+
+#endif // ASC_IMPORTER_DLG_OUTPUT_META

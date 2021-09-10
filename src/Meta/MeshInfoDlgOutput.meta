@@ -1,0 +1,45 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        MeshInfoDlgOutput.meta
+// Purpose:     Definition of TMeshInfoDlgOutput class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef MESH_INFO_DLG_OUTPUT_META
+#define MESH_INFO_DLG_OUTPUT_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "MeshInfoDlgInput.meta"
+
+// Output dialog data for message box / query box
+CLASS(TMeshInfoDlgOutput)
+
+// Private section:
+
+// Public section:
+// Initialization
+MEMBER_PROC_1(Init, TMeshInfoDlgInput, dlgInput)
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(Write, TFile, f)
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(Read, TFile, f)
+END_MEMBER_PROC
+
+END_CLASS // TMeshInfoDlgOutput
+
+
+// Global function to create object of class TMeshInfoDlgOutput
+GLOBAL_FUNC_1(TMeshInfoDlgOutput, NewMeshInfoDlgOutput, TMeshInfoDlgInput, dlgInput)
+	LOCAL_VAR(TMeshInfoDlgOutput, dlgOutput, NEW_VAL(TMeshInfoDlgOutput))
+	CALLP1(dlgOutput.Init, dlgInput)
+	RETURN_VAL(dlgOutput)
+END_GLOBAL_FUNC
+
+#endif // MESH_INFO_DLG_OUTPUT_META

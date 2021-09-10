@@ -1,0 +1,116 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        SoftSkinVerts.meta
+// Purpose:     Definition of TSoftSkinVerts class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef SOFT_SKIN_VERTS_META
+#define SOFT_SKIN_VERTS_META
+
+#include "Meta.h"
+
+
+///////////////////////////////////////////////////////////////////////////////
+// TSoftSkinVert
+
+CLASS(TSoftSkinVert)
+
+// Private section:
+MEMBER_VAR(TARRAY(TSTRING), __bones)
+MEMBER_VAR(TARRAY(TFLOAT),  __weights)
+
+// Public section:
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __bones,   EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __weights, EMPTY_ARRAY(TFLOAT))
+END_MEMBER_PROC
+
+MEMBER_PROC_1(SetNumWeights, TINT, numWeights)
+	IF(SIZE(SELF __bones) != numWeights)
+		ASSIGN(SELF __bones,   EMPTY_ARRAY(TSTRING))
+		ASSIGN(SELF __weights, EMPTY_ARRAY(TFLOAT))
+		FOR(i, 0, numWeights)
+			APPEND(SELF __bones, EMPTY_STRING)
+			APPEND(SELF __weights, 0)
+		END_FOR
+	END_IF
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetNumWeights)
+	RETURN_VAL(SIZE(SELF __bones))
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(SetBoneName, TINT, vertBoneIndex, TSTRING, boneName)
+	SET_ELEM(SELF __bones, vertBoneIndex, boneName)
+END_MEMBER_PROC
+
+MEMBER_FUNC_1(REF(TSTRING), GetBoneName, TINT, vertBoneIndex)
+	RETURN_VAL(GET_ELEM(SELF __bones, vertBoneIndex))
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(SetWeight, TINT, vertBoneIndex, TFLOAT, weight)
+	SET_ELEM(SELF __weights, vertBoneIndex, weight)
+END_MEMBER_PROC
+
+MEMBER_FUNC_1(TFLOAT, GetWeight, TINT, vertBoneIndex)
+	RETURN_VAL(GET_ELEM(SELF __weights, vertBoneIndex))
+END_MEMBER_FUNC
+
+END_CLASS // TSoftSkinVert
+
+// Global function to create an instance of class TSoftSkinVert
+GLOBAL_FUNC_0(TSoftSkinVert, NewSoftSkinVert)
+	LOCAL_VAR(TSoftSkinVert, sv, NEW_VAL(TSoftSkinVert))
+	CALLP0(sv.Init)
+	RETURN_VAL(sv)
+END_GLOBAL_FUNC
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+// TSoftSkinVerts
+
+CLASS(TSoftSkinVerts)
+
+// Private section:
+MEMBER_VAR(TARRAY(TSoftSkinVert),	__verts)
+
+// Public section:
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __verts,    EMPTY_ARRAY(TSoftSkinVert))
+END_MEMBER_PROC
+
+MEMBER_PROC_1(SetNumVerts, TINT, numVerts)
+	IF(SIZE(SELF __verts) != numVerts)
+		ASSIGN(SELF __verts, EMPTY_ARRAY(TSoftSkinVert))
+		FOR(i, 0, numVerts)
+			APPEND(SELF __verts, CALLF0(NewSoftSkinVert))
+		END_FOR
+	END_IF
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetNumVerts)
+	RETURN_VAL(SIZE(SELF __verts))
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(SetVert, TINT, vertIndex, TSoftSkinVert, sv)
+	SET_ELEM(SELF __verts, vertIndex, sv)
+END_MEMBER_PROC
+
+MEMBER_FUNC_1(REF(TSoftSkinVert), GetVert, TINT, vertIndex)
+	RETURN_VAL(GET_ELEM(SELF __verts, vertIndex))
+END_MEMBER_FUNC
+
+END_CLASS // TSoftSkinVerts
+
+// Global function to create an instance of class TSoftSkinVerts
+GLOBAL_FUNC_0(TSoftSkinVerts, NewSoftSkinVerts)
+	LOCAL_VAR(TSoftSkinVerts, svs, NEW_VAL(TSoftSkinVerts))
+	CALLP0(svs.Init)
+	RETURN_VAL(svs)
+END_GLOBAL_FUNC
+
+#endif // SOFT_SKIN_VERTS_META

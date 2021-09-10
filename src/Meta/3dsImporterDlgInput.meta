@@ -1,0 +1,164 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        3dsImporterDlgInput.meta
+// Purpose:     Definition of T3DSImporterDlgInput class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef _3DS_IMPORTER_DLG_INPUT_META
+#define _3DS_IMPORTER_DLG_INPUT_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "3dsImporterDefs.meta"
+
+// Input dialog data for 3d studio mesh importer
+CLASS(T3DSImporterDlgInput)
+
+// Private section:
+MEMBER_VAR(TSTRING,         __importFileName)
+MEMBER_VAR(TINT,            __importFileSize)
+MEMBER_VAR(TARRAY(TSTRING), __slots)
+MEMBER_VAR(TARRAY(TSTRING), __bones)
+MEMBER_VAR(TSTRING,         __selectedSlot)
+MEMBER_VAR(TSTRING,         __selectedBone)
+MEMBER_VAR(TINT,            __curSceneMode)
+MEMBER_VAR(TFLOAT,          __systemUnitsPerFileUnit)
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __importFileName, EMPTY_STRING)
+	ASSIGN(SELF __importFileSize, 0)
+	ASSIGN(SELF __slots, EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __bones, EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __selectedSlot, EMPTY_STRING)
+	ASSIGN(SELF __selectedBone, EMPTY_STRING)
+	ASSIGN(SELF __curSceneMode, CURSCN_REPLACE_SCENE)
+	ASSIGN(SELF __systemUnitsPerFileUnit, 1)
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(Write, TFile, f)
+	CALLP1(f.WriteString, SELF __importFileName)
+	CALLP1(f.WriteUnsignedLong, SELF __importFileSize)
+	CALLP1(f.WriteUnsignedLong, SIZE(SELF __slots))
+	FOR(i, 0, SIZE(SELF __slots))
+		CALLP1(f.WriteString, GET_ELEM(SELF __slots, i))
+	END_FOR
+	CALLP1(f.WriteUnsignedLong, SIZE(SELF __bones))
+	FOR(j, 0, SIZE(SELF __bones))
+		CALLP1(f.WriteString, GET_ELEM(SELF __bones, j))
+	END_FOR
+	CALLP1(f.WriteString, SELF __selectedSlot)
+	CALLP1(f.WriteString, SELF __selectedBone)
+	CALLP1(f.WriteUnsignedChar, SELF __curSceneMode)
+	CALLP1(f.WriteFloat,  SELF __systemUnitsPerFileUnit)
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(Read, TFile, f)
+	ASSIGN(SELF __importFileName, CALLF0(f.ReadString))
+	ASSIGN(SELF __importFileSize, CALLF0(f.ReadUnsignedLong))
+	LOCAL_VAR(TINT, numSlots, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __slots, EMPTY_ARRAY(TSTRING))
+	RESERVE(SELF __slots, numSlots)
+	FOR(i, 0, numSlots)
+		APPEND(SELF __slots, CALLF0(f.ReadString))
+	END_FOR
+	LOCAL_VAR(TINT, numBones, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __bones, EMPTY_ARRAY(TSTRING))
+	RESERVE(SELF __bones, numBones)
+	FOR(j, 0, numBones)
+		APPEND(SELF __bones, CALLF0(f.ReadString))
+	END_FOR
+	ASSIGN(SELF __selectedSlot, CALLF0(f.ReadString))
+	ASSIGN(SELF __selectedBone, CALLF0(f.ReadString))
+	ASSIGN(SELF __curSceneMode, CALLF0(f.ReadUnsignedChar))
+	ASSIGN(SELF __systemUnitsPerFileUnit, CALLF0(f.ReadFloat))
+END_MEMBER_PROC
+
+// Import file name
+MEMBER_PROC_1(SetImportFileName, TSTRING, importFileName)
+	ASSIGN(SELF __importFileName, importFileName)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TSTRING), GetImportFileName)
+	RETURN_VAL(SELF __importFileName)
+END_MEMBER_FUNC
+	
+// Import file size
+MEMBER_PROC_1(SetImportFileSize, TINT, importFileSize)
+	ASSIGN(SELF __importFileSize, importFileSize)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetImportFileSize)
+	RETURN_VAL(SELF __importFileSize)
+END_MEMBER_FUNC
+
+// Names of slots
+MEMBER_PROC_1(SetSlots, TARRAY(TSTRING), slots)
+	ASSIGN(SELF __slots, slots)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetSlots)
+	RETURN_VAL(SELF __slots)
+END_MEMBER_FUNC
+
+// Names of bones
+MEMBER_PROC_1(SetBones, TARRAY(TSTRING), bones)
+	ASSIGN(SELF __bones, bones)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TARRAY(TSTRING)), GetBones)
+	RETURN_VAL(SELF __bones)
+END_MEMBER_FUNC
+
+// Selected slot name
+MEMBER_PROC_1(SetSelectedSlot, TSTRING, selectedSlot)
+	ASSIGN(SELF __selectedSlot, selectedSlot)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TSTRING), GetSelectedSlot)
+	RETURN_VAL(SELF __selectedSlot)
+END_MEMBER_FUNC
+
+// Selected bone name
+MEMBER_PROC_1(SetSelectedBone, TSTRING, selectedBone)
+	ASSIGN(SELF __selectedBone, selectedBone)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TSTRING), GetSelectedBone)
+	RETURN_VAL(SELF __selectedBone)
+END_MEMBER_FUNC
+
+// Selected mode (one of constants CURSCN_...)
+MEMBER_PROC_1(SetCurrentSceneMode, TINT, curSceneMode)
+	ASSIGN(SELF __curSceneMode, curSceneMode)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetCurrentSceneMode)
+	RETURN_VAL(SELF __curSceneMode)
+END_MEMBER_FUNC
+
+// Default (for 3D Editor) number of system units per 1 file unit
+MEMBER_PROC_1(SetSystemUnitsPerFileUnit, TFLOAT, scaleCoef)
+	ASSIGN(SELF __systemUnitsPerFileUnit, scaleCoef)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TFLOAT, GetSystemUnitsPerFileUnit)
+	RETURN_VAL(SELF __systemUnitsPerFileUnit)
+END_MEMBER_FUNC
+
+END_CLASS // T3DSImporterDlgInput
+
+// Global function to create object of class T3DSImporterDlgInput
+GLOBAL_FUNC_0(T3DSImporterDlgInput, New3DSImporterDlgInput)
+	LOCAL_VAR(T3DSImporterDlgInput, dlgInput, NEW_VAL(T3DSImporterDlgInput))
+	CALLP0(dlgInput.Init)
+	RETURN_VAL(dlgInput)
+END_GLOBAL_FUNC
+
+#endif // _3DS_IMPORTER_DLG_INPUT_META

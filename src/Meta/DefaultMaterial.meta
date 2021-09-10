@@ -1,0 +1,38 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        DefaultMaterial.meta
+// Purpose:     Definition of function GetDefaultMaterial.
+// Author:      Vitaly Baranov
+// Created:     September 10, 2009
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef DEFAULT_MATERIAL_META
+#define DEFAULT_MATERIAL_META
+
+#include "Meta.h"
+#include "MaterialDesc.meta"
+
+
+///////////////////////////////////////////////
+// GetDefaultMaterial function
+
+GLOBAL_FUNC_1(TSTRING, GetDefaultMaterialName, TOBJECT, obj)
+	LOCAL_VAR(TCOLOR, clr, GET_WIRE_COLOR(obj))
+	LOCAL_VAR(TINT, ri, FLOAT_TO_INT(GET_RED(clr) * 255))
+	LOCAL_VAR(TINT, gi, FLOAT_TO_INT(GET_GREEN(clr) * 255))
+	LOCAL_VAR(TINT, bi, FLOAT_TO_INT(GET_BLUE(clr) * 255))
+	LOCAL_VAR(TSTRING, mtlName, T("R") + INT_TO_STRING(ri) + T(" G") + INT_TO_STRING(gi) + T(" B") + INT_TO_STRING(bi))
+	RETURN_VAL(mtlName)
+END_GLOBAL_FUNC
+
+GLOBAL_FUNC_1(TMaterialDesc, GetDefaultMaterial, TOBJECT, obj)
+	LOCAL_VAR(TCOLOR, clr, GET_WIRE_COLOR(obj))
+	LOCAL_VAR(TSTRING, mtlName, CALLF1(GetDefaultMaterialName, obj))
+	LOCAL_VAR(TMaterialDesc, mtlDesc, CALLF0(NewMaterialDesc))
+	CALLP1(mtlDesc.SetMaterialName, mtlName)
+	CALLP1(mtlDesc.SetDiffuseColor, clr)
+	CALLP1(mtlDesc.SetDiffuseMapFilename, EMPTY_STRING)
+	RETURN_VAL(mtlDesc)
+END_GLOBAL_FUNC
+ 
+#endif // DEFAULT_MATERIAL_META

@@ -1,0 +1,78 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        ObjectDisplayProps.meta
+// Purpose:     Setting display properties (renderable, visible, boxmode, and x-ray)
+//              for object in 3D Editor's scene
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef OBJECT_DISPLAY_PROPS_META
+#define OBJECT_DISPLAY_PROPS_META
+
+
+// Class to store Object's Display properties
+CLASS(TObjectDisplayProps)
+	
+// Private section:
+MEMBER_VAR(TBOOL,	__visibility)
+MEMBER_VAR(TBOOL,	__renderable)
+MEMBER_VAR(TBOOL,   __transparent)
+MEMBER_VAR(TBOOL,   __boxMode)
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __visibility, TRUE)
+	ASSIGN(SELF __renderable, TRUE)
+	ASSIGN(SELF __transparent, FALSE)
+	ASSIGN(SELF __boxMode, FALSE)
+END_MEMBER_PROC
+	
+MEMBER_PROC_0(Reset)
+	CALLP0(SELF Init)
+END_MEMBER_PROC
+	
+MEMBER_FUNC_0(TBOOL, GetVisibility)
+	RETURN_VAL(SELF __visibility)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetVisibility, TBOOL, visibility)
+	ASSIGN(SELF __visibility, visibility)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TBOOL, GetRenderable)
+	RETURN_VAL(SELF __renderable)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetRenderable, TBOOL, renderable)
+	ASSIGN(SELF __renderable, renderable)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TBOOL, GetTransparent)
+	RETURN_VAL(SELF __transparent)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetTransparent, TBOOL, transparent)
+	ASSIGN(SELF __transparent, transparent)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TBOOL, GetBoxMode)
+	RETURN_VAL(SELF __boxMode)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetBoxMode, TBOOL, boxMode)
+	ASSIGN(SELF __boxMode, boxMode)
+END_MEMBER_PROC
+
+END_CLASS // class TObjectDisplayProps
+
+// Global function to create object of the "TFile" class
+GLOBAL_FUNC_0(TObjectDisplayProps, NewObjectDisplayProps)
+	LOCAL_VAR(TObjectDisplayProps, props, NEW_VAL(TObjectDisplayProps))
+	CALLP0(props.Init)
+	RETURN_VAL(props)
+END_GLOBAL_FUNC
+
+#endif // OBJECT_DISPLAY_PROPS_META

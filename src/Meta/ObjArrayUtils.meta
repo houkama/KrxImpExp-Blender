@@ -1,0 +1,26 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        ObjArrayUtils.meta
+// Purpose:     Functions to operate on array of objects.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef OBJ_ARRAY_UTILS_META
+#define OBJ_ARRAY_UTILS_META
+
+#include "Meta.h"
+
+// Delete all objects from array;
+// Order of deleting: from the array's end to the array's begin
+GLOBAL_PROC_1(DelObjects, TARRAY(TOBJECT), objects)
+	LOCAL_VAR(TINT, i, SIZE(objects) - 1)
+	WHILE(i >= 0)
+		LOCAL_VAR(TOBJECT, obj, GET_ELEM(objects, i))
+		DELETE_OBJECT(obj)
+		ASSIGN(i, i - 1)
+	END_WHILE
+END_GLOBAL_PROC
+
+#endif // OBJ_ARRAY_UTILS_META

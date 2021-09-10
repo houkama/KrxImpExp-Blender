@@ -1,0 +1,123 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        ModelHierarchy.meta
+// Purpose:     Definition of TModelHierarchy class.
+// Author:      Vitaly Baranov
+// Created:     January 27, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef MODEL_HIERARCHY_META
+#define MODEL_HIERARCHY_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "ObjTypes.meta"
+#include "AscTypes.meta"
+
+// Model hierarchy: names of objects, names of their parents, and prefix of the model
+CLASS(TModelHierarchy)
+
+// Private section:
+MEMBER_VAR(TSTRING,         __modelPrefix)
+MEMBER_VAR(TINT,            __modelType)
+MEMBER_VAR(TARRAY(TSTRING), __objects)
+MEMBER_VAR(TARRAY(TSTRING), __objectParents)
+MEMBER_VAR(TARRAY(TINT),    __objectTypes)
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __modelPrefix,   EMPTY_STRING)
+	ASSIGN(SELF __modelType,     MODELTYPE_UNKNOWN)
+	ASSIGN(SELF __objects,       EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __objectParents, EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __objectTypes,   EMPTY_ARRAY(TINT))
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(Write, TFile, f)
+	CALLP1(f.WriteString, SELF __modelPrefix)
+	CALLP1(f.WriteUnsignedChar, SELF __modelType)
+	LOCAL_VAR(TINT, numObjects, SIZE(SELF __objects))
+	CALLP1(f.WriteUnsignedLong, numObjects)
+	FOR(i, 0, numObjects)
+		CALLP1(f.WriteString,       GET_ELEM(SELF __objects, i))
+		CALLP1(f.WriteString,       GET_ELEM(SELF __objectParents, i))
+		CALLP1(f.WriteUnsignedChar, GET_ELEM(SELF __objectTypes, i))
+	END_FOR
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(Read, TFile, f)
+	ASSIGN(SELF __modelPrefix,   CALLF0(f.ReadString))
+	ASSIGN(SELF __modelType,     CALLF0(f.ReadUnsignedChar))
+	LOCAL_VAR(TINT, numObjects,  CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __objects,       EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __objectParents, EMPTY_ARRAY(TSTRING))
+	ASSIGN(SELF __objectTypes,   EMPTY_ARRAY(TINT))
+	FOR(i, 0, numObjects)
+		APPEND(SELF __objects,       CALLF0(f.ReadString))
+		APPEND(SELF __objectParents, CALLF0(f.ReadString))
+		APPEND(SELF __objectTypes,   CALLF0(f.ReadUnsignedChar))
+	END_FOR
+END_MEMBER_PROC
+
+// Model prefix
+MEMBER_PROC_1(SetModelPrefix, TSTRING, modelPrefix)
+	ASSIGN(SELF __modelPrefix, modelPrefix)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TSTRING, GetModelPrefix)
+	RETURN_VAL(SELF __modelPrefix)
+END_MEMBER_FUNC
+
+// Type of model (one of constants MODELTYPE_...)
+MEMBER_PROC_1(SetModelType, TINT, modelType)
+	ASSIGN(SELF __modelType, modelType)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetModelType)
+	RETURN_VAL(SELF __modelType)
+END_MEMBER_FUNC
+
+// Array of names of all model's objects.
+// There are used short names (names without prefixes) in these two function.
+MEMBER_PROC_1(SetObjects, TARRAY(TSTRING), objects)
+	ASSIGN(SELF __objects, objects)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TARRAY(TSTRING), GetObjects)
+	RETURN_VAL(SELF __objects)
+END_MEMBER_FUNC
+
+// Array of names of parents of all model's objects.
+// There are used short names (names without prefixes) in these two function.
+MEMBER_PROC_1(SetObjectParents, TARRAY(TSTRING), objectParents)
+	ASSIGN(SELF __objectParents, objectParents)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TARRAY(TSTRING), GetObjectParents)
+	RETURN_VAL(SELF __objectParents)
+END_MEMBER_FUNC
+
+// Array of objects' types 
+// (Possible objects' types are listed in the "NameAnalyzer.meta" file)
+MEMBER_PROC_1(SetObjectTypes, TARRAY(TINT), objectTypes)
+	ASSIGN(SELF __objectTypes, objectTypes)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TARRAY(TINT), GetObjectTypes)
+	RETURN_VAL(SELF __objectTypes)
+END_MEMBER_FUNC
+
+END_CLASS // TModelHierarchy
+
+// Global function to create object of TModelHierarchy class
+GLOBAL_FUNC_0(TModelHierarchy, NewModelHierarchy)
+	LOCAL_VAR(TModelHierarchy, mh, NEW_VAL(TModelHierarchy))
+	CALLP0(mh.Init)
+	RETURN_VAL(mh)
+END_GLOBAL_FUNC
+
+#endif // MODEL_HIERARCHY_META

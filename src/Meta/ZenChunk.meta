@@ -1,0 +1,105 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        ZENChunk.meta
+// Purpose:     Definition of TZENChunk class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef ZEN_CHUNK_META
+#define ZEN_CHUNK_META
+
+#include "Meta.h"
+
+CLASS(TZENChunk)
+
+// Private section:
+MEMBER_VAR(TINT,          __chunkPos)
+MEMBER_VAR(TINT,          __chunkSize)
+MEMBER_VAR(TSTRING,       __chunkName)
+MEMBER_VAR(TSTRING,       __className)
+MEMBER_VAR(TINT,          __classVersion)
+MEMBER_VAR(TINT,          __objIndex)
+
+// Public section:
+// Initialize a new chunk
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __chunkPos,     0)
+	ASSIGN(SELF __chunkSize,    0)
+	ASSIGN(SELF __chunkName,    EMPTY_STRING)
+	ASSIGN(SELF __className,    EMPTY_STRING)
+	ASSIGN(SELF __classVersion, 0)
+	ASSIGN(SELF __objIndex,     0)
+END_MEMBER_PROC
+
+// Get chunk position relative to the file's set
+MEMBER_FUNC_0(TINT, GetPos)
+	RETURN_VAL(SELF __chunkPos)
+END_MEMBER_FUNC
+
+// Set chunk position relative to the file's set
+MEMBER_PROC_1(SetPos, TINT, chunkPos)
+	ASSIGN(SELF __chunkPos, chunkPos)
+END_MEMBER_PROC
+
+// Get chunk's size
+MEMBER_FUNC_0(TINT, GetSize)
+	RETURN_VAL(SELF __chunkSize)
+END_MEMBER_FUNC
+
+// Set chunk's size
+MEMBER_PROC_1(SetSize, TINT, chunkSize)
+	ASSIGN(SELF __chunkSize, chunkSize)
+END_MEMBER_PROC
+
+// Get chunk's name
+MEMBER_FUNC_0(REF(TSTRING), GetChunkName)
+	RETURN_VAL(SELF __chunkName)
+END_MEMBER_FUNC
+
+// Set chunk's name
+MEMBER_PROC_1(SetChunkName, REF(TSTRING), chunkName)
+	ASSIGN(SELF __chunkName, chunkName)
+END_MEMBER_PROC
+
+// Get class's name
+MEMBER_FUNC_0(REF(TSTRING), GetClassName)
+	RETURN_VAL(SELF __className)
+END_MEMBER_FUNC
+
+// Set class's name
+MEMBER_PROC_1(SetClassName, REF(TSTRING), className)
+	ASSIGN(SELF __className, className)
+END_MEMBER_PROC
+
+// Get class's version
+MEMBER_FUNC_0(TINT, GetClassVersion)
+	RETURN_VAL(SELF __classVersion)
+END_MEMBER_FUNC
+
+// Set class's version
+MEMBER_PROC_1(SetClassVersion, TINT, classVersion)
+	ASSIGN(SELF __classVersion, classVersion)
+END_MEMBER_FUNC
+
+// Get index of object in archive
+MEMBER_FUNC_0(TINT, GetObjectIndex)
+	RETURN_VAL(SELF __objIndex)
+END_MEMBER_FUNC
+
+// Set index of object in archive
+MEMBER_PROC_1(SetObjectIndex, TINT, objIndex)
+	ASSIGN(SELF __objIndex, objIndex)
+END_MEMBER_PROC
+
+END_CLASS // TZENChunk
+
+// Global function to create chunk
+GLOBAL_FUNC_0(TZENChunk, NewZENChunk)
+	LOCAL_VAR(TZENChunk, zchunk, NEW_VAL(TZENChunk))
+	CALLP0(zchunk.Init)
+	RETURN_VAL(zchunk)
+END_GLOBAL_FUNC
+
+#endif // _ZEN_CHUNK_META

@@ -1,0 +1,81 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        ZENFileLoader.meta
+// Purpose:     Definition of TZENFileLoader class.
+// Author:      Vitaly Baranov
+// Created:     June 6, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef ZEN_FILE_LOADER_META
+#define ZEN_FILE_LOADER_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "FormatMsg.meta"
+#include "ZenArchive.meta"
+#include "MshFileLoader.meta"
+#include "ObjectStats.meta"
+#include "SpaceTransform.meta"
+
+// Error messages
+#define ErrWorldChunkExpected	_T("A chunk of class \"oCWorld:zCWorld\" wasn't found.\nFile name: \"%1\".")
+#define ErrMeshAndBspExpected	_T("Chunk \"MeshAndBsp\" wasn't found.\nFile name: \"%1\".")
+
+// Class for loading a 3ds file
+CLASS(TZENFileLoader)
+
+// Private section:
+MEMBER_VAR(TFile,             __file)
+MEMBER_VAR(TMSHFileLoader,    __mshFileLoader)
+
+// Public section:
+// Initialize
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __file, CALLF0(NewFile))
+	ASSIGN(SELF __mshFileLoader, CALLF0(NewMSHFileLoader))
+END_MEMBER_PROC
+
+// Read zen file; throws exception if failed
+MEMBER_PROC_2(ReadZENFile, TSTRING, filename, TSpaceTransform, spaceTransform)
+	CALLP0(SELF Init)
+	TRY
+		CALLP2(SELF __file.Open, filename, T("rb"))
+		LOCAL_VAR(TZENArchive, zarc, CALLF0(NewZENArchive))
+		CALLP1(zarc.ReadHeader, SELF __file)
+		LOCAL_VAR(TZENChunk, zchunk, CALLF1(zarc.ReadChunkStart, SELF __file))
+		IF(CALLF0(zchunk.GetClassName) != T("oCWorld:zCWorld"))
+			THROW(CALLF2(FormatMsg1, ErrWorldChunkExpected, CALLF0(SELF __file.GetName)))
+		END_IF
+		LOCAL_VAR(TZENChunk, zchunk2, CALLF1(zarc.ReadChunkStart, SELF __file))
+		IF(CALLF0(zchunk2.GetChunkName) != T("MeshAndBsp"))
+			THROW(CALLF2(FormatMsg1, ErrMeshAndBspExpected, CALLF0(SELF __file.GetName)))
+		END_IF
+		LOCAL_VAR(TINT, meshAndBspVer,  CALLF0(SELF __file.ReadUnsignedLong))
+		LOCAL_VAR(TINT, meshAndBspSize, CALLF0(SELF __file.ReadUnsignedLong))
+		
+		CALLP2(SELF __mshFileLoader.ReadMSHFile2, SELF __file, spaceTransform)
+		CALLP0(SELF __file.Close)
+	END_TRY
+	CATCH
+		CALLP0(SELF __file.Close)
+		THROW_AGAIN
+	END_CATCH
+END_MEMBER_PROC
+ 
+// Get statistics for imported objects
+MEMBER_FUNC_0(REF(TARRAY(TObjectStats)), GetObjectStats)
+	RETURN_VAL(CALLF0(SELF __mshFileLoader.GetObjectStats))
+END_MEMBER_FUNC
+
+END_CLASS // TZENFileLoader
+
+
+// Create an object of the "TZENFileLoader" class
+GLOBAL_FUNC_0(TZENFileLoader, NewZENFileLoader)
+	LOCAL_VAR(TZENFileLoader, loader, NEW_VAL(TZENFileLoader))
+	CALLP0(loader.Init)
+	RETURN_VAL(loader)
+END_GLOBAL_FUNC
+
+#endif // ZEN_FILE_LOADER_META

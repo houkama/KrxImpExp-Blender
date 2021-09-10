@@ -1,0 +1,100 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        AscExporter.meta
+// Purpose:     Main source file for "asc file exporter" program
+//              This file is intended to be compiled.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef ASC_EXPORTER_META
+#define ASC_EXPORTER_META
+
+#include "Meta.h"
+#include "ImpExpPathes.meta"
+#include "NameAnalyzer.meta"
+#include "SceneAnalyzer.meta"
+#include "FormatMsg.meta"
+#include "AscFileSaver.meta"
+#include "AscExporterDlgInput.meta"
+#include "AscExporterDlgOutput.meta"
+#include "RunUIExe.meta"
+
+// ASC file exporter main function
+EXPORT_FUNC(KrxAscExp, T("ASC"), T("Kerrax ASCII Model"), T("Kerrax"), 2008, 1.10, 0x3a4b4809, 0x2e5f461f, 1024230)
+
+	// analyze the scene
+	LOCAL_VAR(TSceneAnalyzer, sceneAnalyzer, CALLF0(AnalyzeScene))
+
+	// dialog input data
+	LOCAL_VAR(TASCExporterDlgInput, dlgInput, CALLF0(NewASCExporterDlgInput))
+	CALLP1(dlgInput.SetExportFileName, EXPORT_FILE_NAME)
+	CALLP1(dlgInput.SetModelHierarchies, CALLF0(sceneAnalyzer.GetModelHierarchies))
+	LOCAL_VAR(TARRAY(TSTRING), selectedPrefixes, CALLF0(sceneAnalyzer.GetSelectedPrefixes))
+	IF(SIZE(selectedPrefixes) == 0)
+		ASSIGN(selectedPrefixes, CALLF0(sceneAnalyzer.GetScenePrefixes))
+	END_IF
+	IF(SIZE(selectedPrefixes) != 0)
+		LOCAL_VAR(TSTRING, prefix, GET_ELEM(selectedPrefixes, 0))
+		CALLP1(dlgInput.SetSelectedPrefix, prefix)
+		CALLP1(dlgInput.SetSelectedObjects, CALLF0(CALLF1(sceneAnalyzer.GetModelHierarchyByPrefix, prefix).GetObjects))
+	END_IF
+	CALLP1(dlgInput.SetStartFrame, GET_START_FRAME)
+	CALLP1(dlgInput.SetEndFrame,   GET_END_FRAME)
+	CALLP1(dlgInput.SetFileUnitsPerSystemUnit, DEFAULT_FILE_UNITS_PER_SYSTEM_UNIT)
+	
+	// show dialog and analyze the dialog's result
+	LOCAL_VAR(TASCExporterDlgOutput, dlgOutput, CALLF1(NewASCExporterDlgOutput, dlgInput))
+	LOCAL_VAR(TFile, inputFile, CALLF0(NewFile))
+	LOCAL_VAR(TFile, outputFile, CALLF0(NewFile))
+	IF(NOT(QUIET))
+		TRY
+			SHOW_PROGRESS_BAR(T("Showing dialog"), 0)
+			CALLP2(inputFile.Open, DLG_INPUT_FILE_PATH, T("wb"))
+			CALLP1(inputFile.WriteString, T("ASCExporterDlgInput"))
+			CALLP1(dlgInput.Write, inputFile)
+			CALLP0(inputFile.Close)
+			CALLP0(RunUIExe)
+			CALLP2(outputFile.Open, DLG_OUTPUT_FILE_PATH, T("rb"))
+			LOCAL_VAR(TSTRING, structName, CALLF0(outputFile.ReadString))
+			CALLP1(dlgOutput.Read, outputFile)
+			CALLP0(outputFile.Close)
+			
+			IF(NOT(CALLF0(dlgOutput.GetContinueExport)))
+				HIDE_PROGRESS_BAR
+				RETURN_VAL(IMPEXP_CANCEL)
+			END_IF
+		END_TRY
+		CATCH
+			CALLP0(inputFile.Close)
+			CALLP0(outputFile.Close)
+			SHOW_ERROR_BOX(T("Kerrax ASC Exporter"), CURRENT_EXCEPTION)
+			HIDE_PROGRESS_BAR
+			RETURN_VAL(IMPEXP_CANCEL)
+		END_CATCH
+	END_IF
+
+	// Export itself
+	LOCAL_VAR(TASCFileSaver, saver, CALLF0(NewASCFileSaver))
+	TRY
+		LOCAL_VAR(REF(TSTRING), selPrefix, CALLF0(dlgOutput.GetSelectedPrefix))
+        LOCAL_VAR(REF(TModelHierarchy), modelHierarchy, CALLF1(sceneAnalyzer.GetModelHierarchyByPrefix, selPrefix))
+		LOCAL_VAR(REF(TARRAY(TSTRING)), selObjects, CALLF0(dlgOutput.GetSelectedObjects))
+		LOCAL_VAR(TBOOL, expAnim, CALLF0(dlgOutput.GetExportAnimation))
+		LOCAL_VAR(REF(TTimeTransform), timeTransform, CALLF0(dlgOutput.GetTimeTransform))
+		LOCAL_VAR(REF(TSpaceTransform), spaceTransform, CALLF0(dlgOutput.GetSpaceTransform))
+		CALLP6(saver.WriteASCFile, EXPORT_FILE_NAME, modelHierarchy, selObjects, expAnim, timeTransform, spaceTransform)
+	END_TRY
+	CATCH
+		SHOW_ERROR_BOX(T("Kerrax ASC Exporter"), CURRENT_EXCEPTION)
+		HIDE_PROGRESS_BAR
+		RETURN_VAL(IMPEXP_FAIL)
+	END_CATCH	
+
+	HIDE_PROGRESS_BAR
+	RETURN_VAL(IMPEXP_SUCCESS)
+	
+END_EXPORT_FUNC
+
+#endif // ASC_EXPORTER_META

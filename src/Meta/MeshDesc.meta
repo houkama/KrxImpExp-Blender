@@ -1,0 +1,193 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        MeshDesc.meta
+// Purpose:     Definition of class TMeshDesc.
+//              TMeshDesc is a class representing a triangular mesh when 
+//              it is loaded from an ASC file and not applied yet to scene
+// Author:      Vitaly Baranov
+// Created:     March 31, 2009
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef MESH_DESC_META
+#define MESH_DESC_META
+
+#include "Meta.h"
+
+
+///////////////////////////////////////////////
+// TMeshDesc class
+
+CLASS(TMeshDesc)
+
+// Private section:
+MEMBER_VAR(TARRAY(TPOINT3),       __verts)
+MEMBER_VAR(TARRAY(TFACE),         __faces)
+MEMBER_VAR(TARRAY(TINT),          __faceMatIDs)
+MEMBER_VAR(TARRAY(TINT),          __faceSmoothGroups)
+MEMBER_VAR(TARRAY(TARRAY(TBOOL)), __edgeVis)
+MEMBER_VAR(TARRAY(TUVVERT),       __tVerts)
+MEMBER_VAR(TARRAY(TTVFACE),       __tvFaces)
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __verts,      EMPTY_ARRAY(TPOINT3))
+	ASSIGN(SELF __faces,      EMPTY_ARRAY(TFACE))
+	ASSIGN(SELF __faceMatIDs, EMPTY_ARRAY(TINT))
+	ASSIGN(SELF __faceSmoothGroups, EMPTY_ARRAY(TINT))
+	ASSIGN(SELF __edgeVis,    EMPTY_ARRAY(TARRAY(TBOOL)))
+	ASSIGN(SELF __tvFaces,    EMPTY_ARRAY(TTVFACE))
+	ASSIGN(SELF __tVerts,     EMPTY_ARRAY(TUVVERT))
+END_MEMBER_PROC
+
+// Vertices
+MEMBER_FUNC_0(TINT, GetNumVerts)
+	RETURN_VAL(SIZE(SELF __verts))
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetNumVerts, TINT, numVerts)
+	IF(numVerts != SIZE(SELF __verts))
+		ASSIGN(SELF __verts, EMPTY_ARRAY(TPOINT3))
+		RESERVE(SELF __verts, numVerts)
+		FOR(j, 0, numVerts)
+			APPEND(SELF __verts, ZERO_POINT3)
+		END_FOR
+	END_IF
+END_MEMBER_PROC
+
+MEMBER_FUNC_1(TPOINT3, GetVert, TINT, i)
+	RETURN_VAL(GET_ELEM(SELF __verts, i))
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(SetVert, TINT, i, TPOINT3, pt)
+	SET_ELEM(SELF __verts, i, pt)
+END_MEMBER_PROC
+
+// Faces
+MEMBER_FUNC_0(TINT, GetNumFaces)
+	RETURN_VAL(SIZE(SELF __faces))
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetNumFaces, TINT, numFaces)
+	IF(numFaces != SIZE(SELF __faces))
+		ASSIGN(SELF __faces, EMPTY_ARRAY(TFACE))
+		RESERVE(SELF __faces, numFaces)
+		FOR(j, 0, numFaces)
+			APPEND(SELF __faces, NEW_FACE(0, 0, 0))
+		END_FOR
+		ASSIGN(SELF __faceMatIDs, EMPTY_ARRAY(TINT))
+		RESERVE(SELF __faceMatIDs, numFaces)
+		FOR(j, 0, numFaces)
+			APPEND(SELF __faceMatIDs, 0)
+		END_FOR
+		ASSIGN(SELF __faceSmoothGroups, EMPTY_ARRAY(TINT))
+		RESERVE(SELF __faceSmoothGroups, numFaces)
+		FOR(j, 0, numFaces)
+			APPEND(SELF __faceSmoothGroups, 0)
+		END_FOR
+		ASSIGN(SELF __edgeVis, EMPTY_ARRAY(TARRAY(TBOOL)))
+		RESERVE(SELF __edgeVis, numFaces)
+		FOR(j, 0, numFaces)
+			LOCAL_VAR(TARRAY(TBOOL), arr3, EMPTY_ARRAY(TBOOL))
+			RESERVE(arr3, 3)
+			APPEND(arr3, TRUE)
+			APPEND(arr3, TRUE)
+			APPEND(arr3, TRUE)
+			APPEND(SELF __edgeVis, arr3)
+		END_FOR
+	END_IF
+END_MEMBER_PROC
+
+MEMBER_FUNC_1(TFACE, GetFace, TINT, faceIndex)
+	RETURN_VAL(GET_ELEM(SELF __faces, faceIndex))
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(SetFace, TINT, faceIndex, TFACE, f)
+	SET_ELEM(SELF __faces, faceIndex, f)
+END_MEMBER_PROC
+
+// Material index for each face
+MEMBER_FUNC_1(TINT, GetFaceMatID, TINT, faceIndex)
+	RETURN_VAL(GET_ELEM(SELF __faceMatIDs, faceIndex))
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(SetFaceMatID, TINT, faceIndex, TINT, matID)
+	SET_ELEM(SELF __faceMatIDs, faceIndex, matID)
+END_MEMBER_FUNC
+
+// Face smoothing group
+MEMBER_FUNC_1(TINT, GetFaceSmoothGroup, TINT, faceIndex)
+	RETURN_VAL(GET_ELEM(SELF __faceSmoothGroups, faceIndex))
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(SetFaceSmoothGroup, TINT, faceIndex, TINT, smGroup)
+	SET_ELEM(SELF __faceSmoothGroups, faceIndex, smGroup)
+END_MEMBER_FUNC
+
+// Face's edges visibility
+MEMBER_FUNC_2(TBOOL, GetEdgeVis, TINT, faceIndex, TINT, edgeIndex)
+	RETURN_VAL(GET_ELEM(GET_ELEM(SELF __edgeVis, faceIndex), edgeIndex))
+END_MEMBER_FUNC
+
+MEMBER_PROC_3(SetEdgeVis, TINT, faceIndex, TINT, edgeIndex, TBOOL, vis)
+	SET_ELEM(GET_ELEM(SELF __edgeVis, faceIndex), edgeIndex, vis)
+END_MEMBER_FUNC
+
+// Texture vertices;
+// If the mesh has not uv mapping, then number of texture vertices is equal to zero
+MEMBER_FUNC_0(TINT, GetNumTVerts)
+	RETURN_VAL(SIZE(SELF __tVerts))
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetNumTVerts, TINT, numTVerts)
+	IF(numTVerts != SIZE(SELF __tVerts))
+		ASSIGN(SELF __tVerts, EMPTY_ARRAY(TUVVERT))
+		RESERVE(SELF __tVerts, numTVerts)
+		FOR(j, 0, numTVerts)
+			APPEND(SELF __tVerts, ZERO_UVVERT)
+		END_FOR
+	END_IF
+END_MEMBER_PROC
+
+MEMBER_FUNC_1(TUVVERT, GetTVert, TINT, i)
+	RETURN_VAL(GET_ELEM(SELF __tVerts, i))
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(SetTVert, TINT, i, TUVVERT, uv)
+	SET_ELEM(SELF __tVerts, i, uv)
+END_MEMBER_PROC
+
+// Texture faces;
+// If the mesh has not uv mapping, then number of texture faces is equal to zero
+MEMBER_FUNC_0(TINT, GetNumTVFaces)
+	RETURN_VAL(SIZE(SELF __tvFaces))
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetNumTVFaces, TINT, numTVFaces)
+	IF(numTVFaces != SIZE(SELF __tvFaces))
+		ASSIGN(SELF __tvFaces, EMPTY_ARRAY(TTVFACE))
+		RESERVE(SELF __tvFaces, numTVFaces)
+		FOR(j, 0, numTVFaces)
+			APPEND(SELF __tvFaces, NEW_TVFACE(0, 0, 0))
+		END_FOR
+	END_IF
+END_MEMBER_PROC
+
+MEMBER_FUNC_1(TTVFACE, GetTVFace, TINT, i)
+	RETURN_VAL(GET_ELEM(SELF __tvFaces, i))
+END_MEMBER_FUNC
+
+MEMBER_PROC_2(SetTVFace, TINT, i, TTVFACE, tf)
+	SET_ELEM(SELF __tvFaces, i, tf)
+END_MEMBER_PROC
+
+END_CLASS // TMeshDesc
+
+// Global function to create an instance of class TMeshDesc
+GLOBAL_FUNC_0(TMeshDesc, NewMeshDesc)
+	LOCAL_VAR(TMeshDesc, m, NEW_VAL(TMeshDesc))
+	CALLP0(m.Init)
+	RETURN_VAL(m)
+END_GLOBAL_FUNC
+
+#endif // MESH_DESC_META

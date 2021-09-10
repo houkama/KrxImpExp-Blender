@@ -1,0 +1,148 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        TimeTransform.meta
+// Purpose:     Definition of TTimeTransform class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef TIME_TRANSFORM_META
+#define TIME_TRANSFORM_META
+
+#include "Meta.h"
+#include "File.meta"
+
+
+// Time transformation
+CLASS(TTimeTransform)
+
+// Private section:
+MEMBER_VAR(TINT, __startFrameInFile)
+MEMBER_VAR(TINT, __endFrameInFile)
+MEMBER_VAR(TINT, __startFrameInScene)
+MEMBER_VAR(TINT, __endFrameInScene)
+MEMBER_VAR(TINT, __minFrameInFile)
+MEMBER_VAR(TINT, __maxFrameInFile)
+MEMBER_VAR(TINT, __minFrameInScene)
+MEMBER_VAR(TINT, __maxFrameInScene)
+
+// Public section:
+// Initialize
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __startFrameInFile, 0)
+	ASSIGN(SELF __endFrameInFile, 100)
+	ASSIGN(SELF __startFrameInScene, 0)
+	ASSIGN(SELF __endFrameInScene, 100)
+	ASSIGN(SELF __minFrameInFile, 0)
+	ASSIGN(SELF __maxFrameInFile, 100)
+	ASSIGN(SELF __minFrameInScene, 0)
+	ASSIGN(SELF __maxFrameInScene, 100)
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(Write, TFile, f)
+	CALLP1(f.WriteSignedLong,   SELF __startFrameInFile)
+	CALLP1(f.WriteSignedLong,   SELF __endFrameInFile)
+	CALLP1(f.WriteSignedLong,   SELF __startFrameInScene)
+	CALLP1(f.WriteSignedLong,   SELF __endFrameInScene)
+	CALLP1(f.WriteSignedLong,   SELF __minFrameInFile)
+	CALLP1(f.WriteSignedLong,   SELF __maxFrameInFile)
+	CALLP1(f.WriteSignedLong,   SELF __minFrameInScene)
+	CALLP1(f.WriteSignedLong,   SELF __maxFrameInScene)
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(Read, TFile, f)
+	ASSIGN(SELF __startFrameInFile,   CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __endFrameInFile,     CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __startFrameInScene,  CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __endFrameInScene,    CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __minFrameInFile,     CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __maxFrameInFile,     CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __minFrameInScene,     CALLF0(f.ReadSignedLong))
+	ASSIGN(SELF __maxFrameInScene,     CALLF0(f.ReadSignedLong))
+END_MEMBER_PROC
+
+// Index of the first processing frame in the importing/exporting file
+MEMBER_FUNC_0(TINT, GetStartFrameInFile)
+	RETURN_VAL(SELF __startFrameInFile)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetStartFrameInFile, TINT, frameIndex)
+	ASSIGN(SELF __startFrameInFile, frameIndex)
+END_MEMBER_PROC
+
+// Index of the last processing frame in the importing/exporting file
+MEMBER_FUNC_0(TINT, GetEndFrameInFile)
+	RETURN_VAL(SELF __endFrameInFile)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetEndFrameInFile, TINT, frameIndex)
+	ASSIGN(SELF __endFrameInFile, frameIndex)
+END_MEMBER_PROC
+
+// Index of the first processing frame in the current scene
+MEMBER_FUNC_0(TINT, GetStartFrameInScene)
+	RETURN_VAL(SELF __startFrameInScene)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetStartFrameInScene, TINT, frameIndex)
+	ASSIGN(SELF __startFrameInScene, frameIndex)
+END_MEMBER_PROC
+
+// Index of the last processing frame in the current scene
+MEMBER_FUNC_0(TINT, GetEndFrameInScene)
+	RETURN_VAL(SELF __endFrameInScene)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetEndFrameInScene, TINT, frameIndex)
+	ASSIGN(SELF __endFrameInScene, frameIndex)
+END_MEMBER_PROC
+
+// Minimum value for a frame index in the loading file
+MEMBER_FUNC_0(TINT, GetMinFrameInFile)
+	RETURN_VAL(SELF __minFrameInFile)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetMinFrameInFile, TINT, frameIndex)
+	ASSIGN(SELF __minFrameInFile, frameIndex)
+END_MEMBER_PROC
+
+// Maximum value for a frame index in the loading file
+MEMBER_FUNC_0(TINT, GetMaxFrameInFile)
+	RETURN_VAL(SELF __maxFrameInFile)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetMaxFrameInFile, TINT, frameIndex)
+	ASSIGN(SELF __maxFrameInFile, frameIndex)
+END_MEMBER_PROC
+
+// Minimum value for a frame index for the current 3D Editor
+MEMBER_FUNC_0(TINT, GetMinFrameInScene)
+	RETURN_VAL(SELF __minFrameInScene)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetMinFrameInScene, TINT, frameIndex)
+	ASSIGN(SELF __minFrameInScene, frameIndex)
+END_MEMBER_PROC
+
+// Maximum value for a frame index for the current 3D Editor
+MEMBER_FUNC_0(TINT, GetMaxFrameInScene)
+	RETURN_VAL(SELF __maxFrameInScene)
+END_MEMBER_FUNC
+
+MEMBER_PROC_1(SetMaxFrameInScene, TINT, frameIndex)
+	ASSIGN(SELF __maxFrameInScene, frameIndex)
+END_MEMBER_PROC
+
+END_CLASS // TTimeTransform
+
+// Global function to create an instance of class TTimeTransform
+GLOBAL_FUNC_0(TTimeTransform, NewTimeTransform)
+	LOCAL_VAR(TTimeTransform, tt, NEW_VAL(TTimeTransform))
+	CALLP0(tt.Init)
+	RETURN_VAL(tt)
+END_GLOBAL_FUNC
+
+#endif // TIME_TRANSFORM_META

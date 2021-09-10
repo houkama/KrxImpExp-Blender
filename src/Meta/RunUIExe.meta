@@ -1,0 +1,34 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        RunUIExe.meta
+// Purpose:     A function to run executable file providing GUI for importer and exporters.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef RUN_UI_EXE_META
+#define RUN_UI_EXE_META
+
+#include "Meta.h"
+#include "ImpExpPathes.meta"
+#include "FormatMsg.meta"
+
+#define ErrSystem  T("Could not execute:\n%1")
+
+GLOBAL_PROC_0(RunUIExe)
+	LOCAL_VAR(TSTRING, cmdline, EMPTY_STRING)
+	ASSIGN(cmdline, cmdline + T("\"") + UI_EXE_FILE_PATH + T("\""))
+	ASSIGN(cmdline, cmdline + T(" "))
+	ASSIGN(cmdline, cmdline + T("\"") + DLG_INPUT_FILE_PATH + T("\""))
+	ASSIGN(cmdline, cmdline + T(" "))
+	ASSIGN(cmdline, cmdline + T("\"") + DLG_OUTPUT_FILE_PATH + T("\""))
+	ASSIGN(cmdline, cmdline + T(" "))
+	ASSIGN(cmdline, cmdline + T("\"") + UI_CFG_FILE_PATH + T("\""))
+	LOCAL_VAR(TINT, errCode, SYSTEM(cmdline))
+	IF(errCode != 0)
+		THROW(CALLF2(FormatMsg1, ErrSystem, UI_EXE_FILE_PATH))
+	END_IF
+END_GLOBAL_PROC
+
+#endif // RUN_UI_EXE_META

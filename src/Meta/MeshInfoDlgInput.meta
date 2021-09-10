@@ -1,0 +1,106 @@
+///////////////////////////////////////////////////////////////////////////////
+// Name:        MeshInfoDlgInput.meta
+// Purpose:     Definition of TMeshInfoDlgInput class.
+// Author:      Vitaly Baranov
+// Created:     January 14, 2009
+// Modified by:  
+// Licence:     GNU General Public License
+///////////////////////////////////////////////////////////////////////////////
+
+#ifndef MESH_INFO_DLG_INPUT_META
+#define MESH_INFO_DLG_INPUT_META
+
+#include "Meta.h"
+#include "File.meta"
+#include "ObjectStats.meta"
+
+// Input dialog data for mesh import/export information
+CLASS(TMeshInfoDlgInput)
+
+// Private section:
+MEMBER_VAR(TSTRING,				 __fileName)
+MEMBER_VAR(TINT,				 __fileSize)
+MEMBER_VAR(TBOOL,                __exportMode)
+MEMBER_VAR(TARRAY(TObjectStats), __objectStats)
+
+// Public section:
+// Initialization
+MEMBER_PROC_0(Init)
+	ASSIGN(SELF __fileName, EMPTY_STRING)
+	ASSIGN(SELF __fileSize, 0)
+	ASSIGN(SELF __exportMode, FALSE)
+	ASSIGN(SELF __objectStats, EMPTY_ARRAY(TObjectStats))
+END_MEMBER_PROC
+
+// Write the structure members to file
+MEMBER_PROC_1(Write, TFile, f)
+	CALLP1(f.WriteString, SELF __fileName)
+	CALLP1(f.WriteUnsignedLong, SELF __fileSize)
+	CALLP1(f.WriteBool, SELF __exportMode)
+	CALLP1(f.WriteUnsignedLong, SIZE(SELF __objectStats))
+	FOR(i, 0, SIZE(SELF __objectStats))
+		LOCAL_VAR(TObjectStats, objst, GET_ELEM(SELF __objectStats, i))
+		CALLP1(objst.Write, f)
+	END_FOR
+END_MEMBER_PROC
+
+// Read the structure members from file
+MEMBER_PROC_1(Read, TFile, f)
+	ASSIGN(SELF __fileName, CALLF0(f.ReadString))
+	ASSIGN(SELF __fileSize, CALLF0(f.ReadUnsignedLong))
+	ASSIGN(SELF __exportMode, CALLF0(f.ReadBool))
+	ASSIGN(SELF __objectStats, EMPTY_ARRAY(TObjectStats))
+	LOCAL_VAR(TINT, numObjects, CALLF0(f.ReadUnsignedLong))
+	FOR(i, 0, numObjects)
+		LOCAL_VAR(TObjectStats, objst, CALLF0(NewObjectStats))
+		CALLP1(objst.Read, f)
+		APPEND(SELF __objectStats, objst)
+	END_FOR
+END_MEMBER_PROC
+
+// Import/export file name
+MEMBER_PROC_1(SetFileName, TSTRING, fileName)
+	ASSIGN(SELF __fileName, fileName)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TSTRING), GetFileName)
+	RETURN_VAL(SELF __fileName)
+END_MEMBER_FUNC
+	
+// Import file size
+MEMBER_PROC_1(SetFileSize, TINT, fileSize)
+	ASSIGN(SELF __fileSize, fileSize)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TINT, GetFileSize)
+	RETURN_VAL(SELF __fileSize)
+END_MEMBER_FUNC
+
+// Export mode (TRUE - export, FALSE - import)
+MEMBER_PROC_1(SetExportMode, TBOOL, exportMode)
+	ASSIGN(SELF __exportMode, exportMode)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(TBOOL, GetExportMode)
+	RETURN_VAL(SELF __exportMode)
+END_MEMBER_FUNC
+
+// Statistics for all imported/exported objects
+MEMBER_PROC_1(SetObjectStats, TARRAY(TObjectStats), objectStats)
+	ASSIGN(SELF __objectStats, objectStats)
+END_MEMBER_PROC
+
+MEMBER_FUNC_0(REF(TARRAY(TObjectStats)), GetObjectStats)
+	RETURN_VAL(SELF __objectStats)
+END_MEMBER_FUNC
+
+END_CLASS // TMeshInfoDlgInput
+
+// Global function to create object of class TMeshInfoDlgInput
+GLOBAL_FUNC_0(TMeshInfoDlgInput, NewMeshInfoDlgInput)
+	LOCAL_VAR(TMeshInfoDlgInput, dlgInput, NEW_VAL(TMeshInfoDlgInput))
+	CALLP0(dlgInput.Init)
+	RETURN_VAL(dlgInput)
+END_GLOBAL_FUNC
+
+#endif // MESH_INFO_DLG_INPUT_META
